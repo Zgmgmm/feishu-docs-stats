@@ -88,6 +88,58 @@
             background: linear-gradient(135deg, #00b894 0%, #0088aa 100%);
         }
 
+        /* 用户信息区域样式 */
+        .user-info {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e1e5e9;
+        }
+
+        .user-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 3px solid #667eea;
+            flex-shrink: 0;
+        }
+
+        .user-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .user-details {
+            flex: 1;
+            margin-left: 15px;
+        }
+
+        .user-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 2px;
+        }
+
+        .user-email {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .logout-btn {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            padding: 8px 20px;
+            font-size: 14px;
+        }
+
+        .logout-btn:hover {
+            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
+        }
+
         .input-section {
             background: white;
             border-radius: 15px;
@@ -321,6 +373,18 @@
                 </div>
                 <button class="btn auth-btn" onclick="requestAuth()" id="authBtn">飞书授权</button>
             </div>
+            
+            <!-- 用户信息区域 -->
+            <div class="user-info" id="userInfo" style="display: none;">
+                <div class="user-avatar">
+                    <img id="userAvatar" src="" alt="用户头像" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMjAiIGZpbGw9IiNFNUU3RUIiLz4KPHBhdGggZD0iTTIwIDEwQzIyLjIwOTEgMTAgMjQgMTEuNzkwOSAyNCAxNEMyNCAxNi4yMDkxIDIyLjIwOTEgMTggMjAgMThDMTcuNzkwOSAxOCAxNiAxNi4yMDkxIDE2IDE0QzE2IDExLjc5MDkgMTcuNzkwOSAxMCAyMCAxMFoiIGZpbGw9IiM5Q0EzQUYiLz4KPHBhdGggZD0iTTI4IDMwQzI4IDI2LjY4NjMgMjQuNDE4MyAyNCAyMCAyNEMxNS41ODE3IDI0IDEyIDI2LjY4NjMgMTIgMzBIMTlIMjFIMjhaIiBmaWxsPSIjOUNBM0FGIi8+Cjwvc3ZnPgo='">
+                </div>
+                <div class="user-details">
+                    <div class="user-name" id="userName">用户名称</div>
+                    <div class="user-email" id="userEmail">用户邮箱</div>
+                </div>
+                <button class="btn logout-btn" onclick="logoutAuth()">退出登录</button>
+            </div>
         </div>
 
         <div class="input-section">
@@ -432,6 +496,11 @@
                 }
                 
                 updateAuthUI();
+                
+                // 如果已授权，获取用户信息
+                if (isAuthorized) {
+                    await loadUserInfo();
+                }
             } catch (error) {
                 console.error('检查授权状态失败:', error);
                 isAuthorized = false;
@@ -442,6 +511,7 @@
         // 更新授权UI
         function updateAuthUI() {
             const authStatus = document.getElementById('authStatus');
+            const userInfo = document.getElementById('userInfo');
             const authIcon = authStatus.querySelector('.auth-icon');
             const authText = authStatus.querySelector('.auth-text');
             const authBtn = document.getElementById('authBtn');
@@ -451,16 +521,62 @@
                 authStatus.classList.add('authorized');
                 authIcon.textContent = '✅';
                 authText.textContent = '已授权';
-                authBtn.textContent = '退出授权';
-                authBtn.onclick = logoutAuth;
+                authBtn.style.display = 'none'; // 隐藏授权按钮
+                userInfo.style.display = 'flex'; // 显示用户信息
                 analyzeBtn.disabled = false;
             } else {
                 authStatus.classList.remove('authorized');
                 authIcon.textContent = '🔒';
                 authText.textContent = '未授权';
+                authBtn.style.display = 'block'; // 显示授权按钮
+                userInfo.style.display = 'none'; // 隐藏用户信息
                 authBtn.textContent = '飞书授权';
                 authBtn.onclick = requestAuth;
                 analyzeBtn.disabled = true;
+            }
+        }
+
+        // 加载用户信息
+        async function loadUserInfo() {
+            try {
+                const headers = {};
+                if (jwtToken) {
+                    headers['Authorization'] = `Bearer ${jwtToken}`;
+                }
+                
+                const response = await fetch('/auth/user-info', { headers });
+                const data = await response.json();
+                
+                if (data.success && data.user_info) {
+                    displayUserInfo(data.user_info);
+                } else {
+                    console.error('获取用户信息失败:', data.message);
+                }
+            } catch (error) {
+                console.error('加载用户信息失败:', error);
+            }
+        }
+
+        // 显示用户信息
+        function displayUserInfo(userInfo) {
+            const userAvatar = document.getElementById('userAvatar');
+            const userName = document.getElementById('userName');
+            const userEmail = document.getElementById('userEmail');
+            
+            // 设置用户头像
+            if (userInfo.avatar_url) {
+                userAvatar.src = userInfo.avatar_url;
+            }
+            
+            // 设置用户名称
+            userName.textContent = userInfo.name || '未知用户';
+            
+            // 设置用户邮箱
+            if (userInfo.email) {
+                userEmail.textContent = userInfo.email;
+                userEmail.style.display = 'block';
+            } else {
+                userEmail.style.display = 'none';
             }
         }
 
@@ -481,6 +597,16 @@
                 
                 isAuthorized = false;
                 updateAuthUI();
+                
+                // 清除用户信息显示
+                const userAvatar = document.getElementById('userAvatar');
+                const userName = document.getElementById('userName');
+                const userEmail = document.getElementById('userEmail');
+                
+                userAvatar.src = '';
+                userName.textContent = '用户名称';
+                userEmail.textContent = '用户邮箱';
+                
                 showMessage('已退出授权', 'success');
             } catch (error) {
                 console.error('退出授权失败:', error);

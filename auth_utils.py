@@ -228,4 +228,66 @@ def validate_auth_config() -> bool:
         logger.error("错误：请在配置中设置 app_id 和 app_secret。")
         return False
         
-    return True 
+    return True
+
+def get_user_info(user_access_token: str) -> Optional[dict]:
+    """获取用户信息（名称和头像）
+    
+    Args:
+        user_access_token: 飞书用户访问令牌
+        
+    Returns:
+        包含用户信息的字典，失败则返回None
+    """
+    try:
+        # 创建飞书客户端
+        client = get_feishu_client()
+
+        # 构造请求对象
+        options = lark.RequestOption.builder().user_access_token(user_access_token).build()
+        request: GetUserInfoRequest = GetUserInfoRequest.builder() \
+            .build()
+
+        # 发起请求
+        response: GetUserInfoResponse = client.authen.v1.user_info.get(request, options)
+
+        # 处理失败返回
+        if not response.success():
+            lark.logger.error(
+                f"client.authen.v1.user_info.get failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}, resp: \n{json.dumps(json.loads(response.raw.content), indent=4, ensure_ascii=False)}")
+            return
+
+        # 处理业务结果
+        lark.logger.info(lark.JSON.marshal(response.data, indent=4))
+        return vars(response.data)
+    except Exception as e:
+        logger.error(f"获取用户信息时发生异常: {e}")
+        return None
+
+def get_current_user_info() -> Optional[dict]:
+    """获取当前登录用户的信息
+    
+    Returns:
+        包含用户信息的字典，失败则返回None
+    """
+    # 从请求头或参数中获取JWT token
+    auth_header = request.headers.get('Authorization')
+    jwt_token = None
+    
+    if auth_header and auth_header.startswith('Bearer '):
+        jwt_token = auth_header[7:]
+    else:
+        jwt_token = request.args.get('token')
+    
+    if not jwt_token:
+        logger.warning("未找到JWT token")
+        return None
+    
+    # 验证JWT token并获取user_access_token
+    user_access_token = verify_jwt_token(jwt_token)
+    if not user_access_token:
+        logger.warning("JWT token验证失败")
+        return None
+    
+    # 获取用户信息
+    return get_user_info(user_access_token) 

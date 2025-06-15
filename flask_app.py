@@ -65,6 +65,22 @@ def auth_status():
 def auth_logout():
     return jsonify({"message": "已退出授权", "success": True})
 
+@app.route('/auth/user-info')
+def get_user_info_route():
+    """获取当前登录用户的信息"""
+    user_info = get_current_user_info()
+    
+    if user_info:
+        return jsonify({
+            "success": True,
+            "user_info": user_info
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "message": "获取用户信息失败，请检查授权状态"
+        }), 401
+
 # ngrok 相关路由
 @app.route('/ngrok/start')
 def start_ngrok():
