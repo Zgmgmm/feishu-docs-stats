@@ -940,20 +940,25 @@ def process_wiki_children(space_id: str, parent_token: str, url: str) -> List[Di
         
         # 批量获取元数据（用于更新时间和标题）
         request_docs = []
-        for node in child_nodes:
+        token_to_index = {}  # 用于跟踪token到索引的映射
+        for i, node in enumerate(child_nodes):
             if node.obj_token and node.obj_type:
                 request_doc = RequestDoc.builder() \
                     .doc_token(node.obj_token) \
                     .doc_type(node.obj_type) \
                     .build()
                 request_docs.append(request_doc)
+                token_to_index[node.obj_token] = i
         
         metas = batch_get_meta(request_docs, user_token)
         meta_dict = {}
+        
+        # 修复：使用token_to_index确保正确的对应关系
         for i, meta in enumerate(metas):
             if i < len(request_docs):
                 token = request_docs[i].doc_token
                 meta_dict[token] = meta
+                logger.debug(f"元数据映射: token={token}, title={getattr(meta, 'title', 'N/A')}")
         
         # 处理结果
         child_stats_list = []
@@ -971,6 +976,11 @@ def process_wiki_children(space_id: str, parent_token: str, url: str) -> List[Di
                     # 使用元数据中的真实标题
                     if hasattr(meta, 'title') and meta.title:
                         title = meta.title
+                        logger.debug(f"节点 {node.obj_token} 使用元数据标题: {title}")
+                    else:
+                        logger.debug(f"节点 {node.obj_token} 使用原始标题: {title}")
+                else:
+                    logger.debug(f"节点 {node.obj_token} 未找到元数据，使用原始标题: {title}")
                 
                 # 创建带有真实标题的节点对象
                 node_with_title = NodeInfo(
@@ -1030,20 +1040,25 @@ async def process_wiki_children_async(space_id: str, parent_token: str, url: str
         
         # 批量获取元数据（用于更新时间和标题）
         request_docs = []
-        for node in child_nodes:
+        token_to_index = {}  # 用于跟踪token到索引的映射
+        for i, node in enumerate(child_nodes):
             if node.obj_token and node.obj_type:
                 request_doc = RequestDoc.builder() \
                     .doc_token(node.obj_token) \
                     .doc_type(node.obj_type) \
                     .build()
                 request_docs.append(request_doc)
+                token_to_index[node.obj_token] = i
         
         metas = await batch_get_meta_async(request_docs, user_token)
         meta_dict = {}
+        
+        # 修复：使用token_to_index确保正确的对应关系
         for i, meta in enumerate(metas):
             if i < len(request_docs):
                 token = request_docs[i].doc_token
                 meta_dict[token] = meta
+                logger.debug(f"元数据映射: token={token}, title={getattr(meta, 'title', 'N/A')}")
         
         # 处理结果
         child_stats_list = []
@@ -1061,6 +1076,11 @@ async def process_wiki_children_async(space_id: str, parent_token: str, url: str
                     # 使用元数据中的真实标题
                     if hasattr(meta, 'title') and meta.title:
                         title = meta.title
+                        logger.debug(f"节点 {node.obj_token} 使用元数据标题: {title}")
+                    else:
+                        logger.debug(f"节点 {node.obj_token} 使用原始标题: {title}")
+                else:
+                    logger.debug(f"节点 {node.obj_token} 未找到元数据，使用原始标题: {title}")
                 
                 # 创建带有真实标题的节点对象
                 node_with_title = NodeInfo(
