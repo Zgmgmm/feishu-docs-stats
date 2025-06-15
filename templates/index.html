@@ -212,38 +212,68 @@
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
-        .url-item a {
+        .url-item .file-info {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 0;
+            min-height: 24px;
+        }
+
+        .url-item .file-title {
             font-weight: 600;
             color: #667eea;
             text-decoration: none;
-            margin-bottom: 4px;
-            cursor: pointer;
             transition: color 0.2s ease;
+            word-break: break-word;
+            line-height: 1.4;
+            flex: 1;
+            display: flex;
+            align-items: center;
         }
 
-        .url-item a:hover {
+        .url-item .file-title:hover {
             color: #5a6fd8;
             text-decoration: underline;
         }
 
-        .url-item span {
-            flex: 1;
-            word-break: break-all;
+        .url-item .file-type-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2px 6px;
+            color: white;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            transition: all 0.2s ease;
+            margin-right: 8px;
+            flex-shrink: 0;
+            height: 18px;
+            line-height: 1;
         }
 
         .remove-btn {
             background: #dc3545;
             color: white;
             border: none;
-            padding: 5px 10px;
-            border-radius: 5px;
+            padding: 8px 14px;
+            border-radius: 8px;
             cursor: pointer;
             margin-left: 10px;
-            font-size: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
         }
 
         .remove-btn:hover {
             background: #c82333;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(220, 53, 69, 0.4);
         }
 
         .btn {
@@ -488,6 +518,78 @@
             border-radius: 8px;
             margin-bottom: 20px;
             border-left: 4px solid #28a745;
+        }
+
+        /* 文件信息样式 */
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 0;
+        }
+
+        .file-title {
+            font-weight: 600;
+            color: #667eea;
+            text-decoration: none;
+            transition: color 0.2s ease;
+            word-break: break-word;
+            line-height: 1.4;
+            flex: 1;
+        }
+
+        .file-title:hover {
+            color: #5a6fd8;
+            text-decoration: underline;
+        }
+
+        .file-type-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            color: white;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            transition: all 0.2s ease;
+            margin-right: 8px;
+            vertical-align: middle;
+            flex-shrink: 0;
+        }
+
+        .file-type-badge:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        /* 不同TYPE的配色方案 */
+        .file-type-badge.doc {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .file-type-badge.sheet {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        }
+
+        .file-type-badge.mindnote {
+            background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+        }
+
+        .file-type-badge.bitable {
+            background: linear-gradient(135deg, #17a2b8 0%, #6f42c1 100%);
+        }
+
+        .file-type-badge.wiki {
+            background: linear-gradient(135deg, #e83e8c 0%, #dc3545 100%);
+        }
+
+        .file-type-badge.folder {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+        }
+
+        .file-type-badge.unknown {
+            background: linear-gradient(135deg, #adb5bd 0%, #6c757d 100%);
         }
 
         /* 响应式设计 */
@@ -736,10 +838,10 @@
         }
 
         /* 添加列分割线 */
-        .data-table th:nth-child(5),
-        .data-table th:nth-child(8),
-        .data-table td:nth-child(5),
-        .data-table td:nth-child(8) {
+        .data-table th:nth-child(4),
+        .data-table th:nth-child(7),
+        .data-table td:nth-child(4),
+        .data-table td:nth-child(7) {
             border-right: 1px solid #dee2e6;
         }
     </style>
@@ -808,8 +910,7 @@
                 <table class="data-table" id="dataTable">
                     <thead>
                         <tr>
-                            <th rowspan="2">TITLE</th>
-                            <th rowspan="2">TYPE</th>
+                            <th rowspan="2">FILE</th>
                             <th colspan="3" class="header-group">TOTAL</th>
                             <th colspan="3" class="header-group">TODAY</th>
                             <th rowspan="2" class="sortable" data-sort="update_time">UPDATE TIME</th>
@@ -1101,19 +1202,43 @@
                 urlItem.className = 'url-item';
                 
                 const displayName = urlNames[url] || url;
-                const isUrl = displayName === url;
+                
+                // 获取URL对应的类型标签
+                const urlType = getUrlType(url);
+                const typeClass = getTypeClass(urlType);
                 
                 urlItem.innerHTML = `
-                    <div style="flex: 1; display: flex; flex-direction: column;">
-                        <a href="${url}" target="_blank">
-                            ${displayName}
-                        </a>
-                        ${isUrl ? '' : `<span style="font-size: 12px; color: #666; word-break: break-all;">${url}</span>`}
+                    <div class="file-info">
+                        <span class="file-type-badge ${typeClass}">${urlType}</span>
+                        <a href="${url}" target="_blank" class="file-title">${displayName}</a>
                     </div>
                     <button class="remove-btn" onclick="removeUrl(${index})">删除</button>
                 `;
                 urlList.appendChild(urlItem);
             });
+        }
+
+        // 获取URL对应的类型
+        function getUrlType(url) {
+            if (!url) return 'unknown';
+            
+            const urlLower = url.toLowerCase();
+            
+            if (urlLower.includes('/wiki/')) {
+                return 'wiki';
+            } else if (urlLower.includes('/sheets/') || urlLower.includes('/spreadsheets/')) {
+                return 'sheet';
+            } else if (urlLower.includes('/mindnotes/') || urlLower.includes('/mind/')) {
+                return 'mindnote';
+            } else if (urlLower.includes('/bitable/') || urlLower.includes('/tables/')) {
+                return 'bitable';
+            } else if (urlLower.includes('/folders/') || urlLower.includes('/directory/')) {
+                return 'folder';
+            } else if (urlLower.includes('/docs/') || urlLower.includes('/documents/')) {
+                return 'doc';
+            } else {
+                return 'unknown';
+            }
         }
 
         function clearUrls() {
@@ -1287,9 +1412,16 @@
                     doc._sortTime = 0;
                 }
                 
+                // 获取TYPE对应的CSS类名
+                const typeClass = getTypeClass(doc.type);
+                
                 row.innerHTML = `
-                    <td><a href="${doc.source_url}" target="_blank" style="color: #667eea; text-decoration: none; font-weight: 500;">${doc.title}</a></td>
-                    <td>${doc.type}</td>
+                    <td>
+                        <div class="file-info">
+                            <span class="file-type-badge ${typeClass}">${doc.type}</span>
+                            <a href="${doc.source_url}" target="_blank" class="file-title">${doc.title}</a>
+                        </div>
+                    </td>
                     <td>${doc.uv || 0}</td>
                     <td>${doc.pv || 0}</td>
                     <td>${doc.like_count || 0}</td>
@@ -1300,6 +1432,30 @@
                 `;
                 tableBody.appendChild(row);
             });
+        }
+
+        // 获取TYPE对应的CSS类名
+        function getTypeClass(type) {
+            if (!type) return 'unknown';
+            
+            const typeLower = type.toLowerCase();
+            
+            // 根据TYPE值返回对应的CSS类名
+            if (typeLower.includes('doc') || typeLower.includes('document')) {
+                return 'doc';
+            } else if (typeLower.includes('sheet') || typeLower.includes('spreadsheet')) {
+                return 'sheet';
+            } else if (typeLower.includes('mindnote') || typeLower.includes('mind')) {
+                return 'mindnote';
+            } else if (typeLower.includes('bitable') || typeLower.includes('table')) {
+                return 'bitable';
+            } else if (typeLower.includes('wiki')) {
+                return 'wiki';
+            } else if (typeLower.includes('folder') || typeLower.includes('directory')) {
+                return 'folder';
+            } else {
+                return 'unknown';
+            }
         }
 
         // 显示授权提示弹窗
