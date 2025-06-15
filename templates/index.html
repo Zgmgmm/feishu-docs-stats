@@ -43,6 +43,51 @@
             opacity: 0.9;
         }
 
+        .auth-section {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .auth-status {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .auth-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .auth-icon {
+            font-size: 1.5rem;
+        }
+
+        .auth-text {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .auth-status.authorized .auth-icon {
+            color: #28a745;
+        }
+
+        .auth-status.authorized .auth-text {
+            color: #28a745;
+        }
+
+        .auth-btn {
+            background: linear-gradient(135deg, #00d4aa 0%, #0099cc 100%);
+        }
+
+        .auth-btn:hover {
+            background: linear-gradient(135deg, #00b894 0%, #0088aa 100%);
+        }
+
         .input-section {
             background: white;
             border-radius: 15px;
@@ -267,6 +312,17 @@
             <p>输入飞书文档链接，获取详细的访问统计和数据分析</p>
         </div>
 
+        <!-- 授权状态区域 -->
+        <div class="auth-section" id="authSection">
+            <div class="auth-status" id="authStatus">
+                <div class="auth-info">
+                    <span class="auth-icon">🔒</span>
+                    <span class="auth-text">未授权</span>
+                </div>
+                <button class="btn auth-btn" onclick="requestAuth()" id="authBtn">飞书授权</button>
+            </div>
+        </div>
+
         <div class="input-section">
             <div class="input-group">
                 <label for="urlInput">文档链接：</label>
@@ -335,6 +391,102 @@
     <script>
         let urls = [];
         let chartInstances = [];
+        let isAuthorized = false;
+        let jwtToken = null;
+
+        // 页面加载时检查授权状态
+        document.addEventListener('DOMContentLoaded', function() {
+            // 从URL参数中获取JWT token（授权回调后）
+            const urlParams = new URLSearchParams(window.location.search);
+            const tokenFromUrl = urlParams.get('token');
+            if (tokenFromUrl) {
+                // 存储JWT token到sessionStorage
+                sessionStorage.setItem('jwt_token', tokenFromUrl);
+                // 清除URL中的token参数
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+            
+            // 从sessionStorage中获取JWT token
+            jwtToken = sessionStorage.getItem('jwt_token');
+            
+            checkAuthStatus();
+        });
+
+        // 检查授权状态
+        async function checkAuthStatus() {
+            try {
+                const headers = {};
+                if (jwtToken) {
+                    headers['Authorization'] = `Bearer ${jwtToken}`;
+                }
+                
+                const response = await fetch('/auth/status', { headers });
+                const data = await response.json();
+                
+                isAuthorized = data.authorized;
+                
+                // 如果从URL获取到新token，更新存储
+                if (data.token) {
+                    jwtToken = data.token;
+                    sessionStorage.setItem('jwt_token', jwtToken);
+                }
+                
+                updateAuthUI();
+            } catch (error) {
+                console.error('检查授权状态失败:', error);
+                isAuthorized = false;
+                updateAuthUI();
+            }
+        }
+
+        // 更新授权UI
+        function updateAuthUI() {
+            const authStatus = document.getElementById('authStatus');
+            const authIcon = authStatus.querySelector('.auth-icon');
+            const authText = authStatus.querySelector('.auth-text');
+            const authBtn = document.getElementById('authBtn');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+
+            if (isAuthorized) {
+                authStatus.classList.add('authorized');
+                authIcon.textContent = '✅';
+                authText.textContent = '已授权';
+                authBtn.textContent = '退出授权';
+                authBtn.onclick = logoutAuth;
+                analyzeBtn.disabled = false;
+            } else {
+                authStatus.classList.remove('authorized');
+                authIcon.textContent = '🔒';
+                authText.textContent = '未授权';
+                authBtn.textContent = '飞书授权';
+                authBtn.onclick = requestAuth;
+                analyzeBtn.disabled = true;
+            }
+        }
+
+        // 请求授权
+        function requestAuth() {
+            window.location.href = '/auth';
+        }
+
+        // 退出授权
+        async function logoutAuth() {
+            try {
+                const response = await fetch('/auth/logout');
+                const data = await response.json();
+                
+                // 清除JWT token
+                jwtToken = null;
+                sessionStorage.removeItem('jwt_token');
+                
+                isAuthorized = false;
+                updateAuthUI();
+                showMessage('已退出授权', 'success');
+            } catch (error) {
+                console.error('退出授权失败:', error);
+                showMessage('退出授权失败', 'error');
+            }
+        }
 
         function addUrl() {
             const input = document.getElementById('urlInput');
@@ -406,6 +558,11 @@
         }
 
         async function analyzeData() {
+            if (!isAuthorized) {
+                showMessage('请先进行飞书授权', 'error');
+                return;
+            }
+
             if (urls.length === 0) {
                 showMessage('请先添加文档链接', 'error');
                 return;
@@ -420,16 +577,32 @@
             analyzeBtn.disabled = true;
             
             try {
+                const headers = {
+                    'Content-Type': 'application/json',
+                };
+                
+                if (jwtToken) {
+                    headers['Authorization'] = `Bearer ${jwtToken}`;
+                }
+                
                 const response = await fetch('/stats', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: headers,
                     body: JSON.stringify({ urls: urls })
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorData = await response.json();
+                    if (response.status === 401 && errorData.need_auth) {
+                        // 授权失效，清除token并重新检查授权状态
+                        jwtToken = null;
+                        sessionStorage.removeItem('jwt_token');
+                        await checkAuthStatus();
+                        showMessage('授权已失效，请重新授权', 'error');
+                    } else {
+                        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                    }
+                    return;
                 }
                 
                 const data = await response.json();

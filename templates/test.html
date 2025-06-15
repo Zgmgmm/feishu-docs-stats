@@ -71,6 +71,15 @@
         </div>
 
         <div class="test-section">
+            <h3>🔐 授权测试</h3>
+            <button class="btn" onclick="testAuthStatus()">检查授权状态</button>
+            <button class="btn" onclick="testAuth()">测试授权流程</button>
+            <button class="btn" onclick="testLogout()">测试退出授权</button>
+            <button class="btn" onclick="testJWTStorage()">测试JWT存储</button>
+            <div id="authResult" class="result"></div>
+        </div>
+
+        <div class="test-section">
             <h3>📋 系统信息</h3>
             <div id="systemInfo" class="result"></div>
         </div>
@@ -193,6 +202,114 @@
                 }
             } catch (error) {
                 resultDiv.textContent = `❌ 链接格式错误: ${error.message}`;
+                resultDiv.parentElement.className = 'test-section error';
+            }
+        }
+
+        // 测试授权状态
+        async function testAuthStatus() {
+            const resultDiv = document.getElementById('authResult');
+            resultDiv.textContent = '正在检查授权状态...';
+            
+            try {
+                // 从sessionStorage获取JWT token
+                const jwtToken = sessionStorage.getItem('jwt_token');
+                const headers = {};
+                if (jwtToken) {
+                    headers['Authorization'] = `Bearer ${jwtToken}`;
+                }
+                
+                const response = await fetch('/auth/status', { headers });
+                const data = await response.json();
+                
+                let resultText = `✅ 授权状态检查成功\n`;
+                resultText += `授权状态: ${data.authorized ? '已授权' : '未授权'}\n`;
+                resultText += `有Token: ${data.has_token ? '是' : '否'}\n`;
+                
+                if (data.expires_in) {
+                    const minutes = Math.floor(data.expires_in / 60);
+                    const seconds = data.expires_in % 60;
+                    resultText += `过期时间: ${minutes}分${seconds}秒\n`;
+                }
+                
+                if (data.token) {
+                    resultText += `新Token: ${data.token.substring(0, 20)}...\n`;
+                }
+                
+                resultDiv.textContent = resultText;
+                resultDiv.parentElement.className = 'test-section success';
+            } catch (error) {
+                resultDiv.textContent = `❌ 授权状态检查失败: ${error.message}`;
+                resultDiv.parentElement.className = 'test-section error';
+            }
+        }
+
+        // 测试授权流程
+        function testAuth() {
+            const resultDiv = document.getElementById('authResult');
+            resultDiv.textContent = '正在跳转到授权页面...';
+            
+            // 跳转到授权页面
+            window.location.href = '/auth';
+        }
+
+        // 测试退出授权
+        async function testLogout() {
+            const resultDiv = document.getElementById('authResult');
+            resultDiv.textContent = '正在退出授权...';
+            
+            try {
+                const response = await fetch('/auth/logout');
+                const data = await response.json();
+                
+                // 清除JWT token
+                sessionStorage.removeItem('jwt_token');
+                
+                resultDiv.textContent = `✅ 退出授权成功\n${JSON.stringify(data, null, 2)}`;
+                resultDiv.parentElement.className = 'test-section success';
+            } catch (error) {
+                resultDiv.textContent = `❌ 退出授权失败: ${error.message}`;
+                resultDiv.parentElement.className = 'test-section error';
+            }
+        }
+
+        // 测试JWT存储
+        function testJWTStorage() {
+            const resultDiv = document.getElementById('authResult');
+            resultDiv.textContent = '正在测试JWT存储...';
+            
+            try {
+                const jwtToken = sessionStorage.getItem('jwt_token');
+                let resultText = 'JWT存储测试结果:\n';
+                
+                if (jwtToken) {
+                    resultText += `✅ 找到JWT token\n`;
+                    resultText += `Token长度: ${jwtToken.length} 字符\n`;
+                    resultText += `Token前缀: ${jwtToken.substring(0, 20)}...\n`;
+                    
+                    // 尝试解析JWT token（不验证签名）
+                    const parts = jwtToken.split('.');
+                    if (parts.length === 3) {
+                        try {
+                            const payload = JSON.parse(atob(parts[1]));
+                            resultText += `Token类型: JWT\n`;
+                            resultText += `发行者: ${payload.iss || '未知'}\n`;
+                            if (payload.exp) {
+                                const expDate = new Date(payload.exp * 1000);
+                                resultText += `过期时间: ${expDate.toLocaleString()}\n`;
+                            }
+                        } catch (e) {
+                            resultText += `Token解析失败: ${e.message}\n`;
+                        }
+                    }
+                } else {
+                    resultText += `❌ 未找到JWT token\n`;
+                }
+                
+                resultDiv.textContent = resultText;
+                resultDiv.parentElement.className = jwtToken ? 'test-section success' : 'test-section error';
+            } catch (error) {
+                resultDiv.textContent = `❌ JWT存储测试失败: ${error.message}`;
                 resultDiv.parentElement.className = 'test-section error';
             }
         }

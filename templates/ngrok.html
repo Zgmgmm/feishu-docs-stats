@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ngrok 隧道管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f9f9f9;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .status-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            margin-bottom: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .status-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+
+        .status-label {
+            font-weight: bold;
+            color: #555;
+        }
+
+        .status-value {
+            color: #333;
+            word-break: break-all;
+        }
+
+        .status-value.active {
+            color: #28a745;
+            font-weight: bold;
+        }
+
+        .status-value.inactive {
+            color: #dc3545;
+            font-weight: bold;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5a6fd8;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-weight: bold;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .copy-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+            margin-left: 10px;
+        }
+
+        .copy-btn:hover {
+            background: #5a6268;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .instructions {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #2196f3;
+        }
+
+        .instructions h3 {
+            color: #1976d2;
+            margin-bottom: 15px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+        }
+
+        .instructions li {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+
+        .instructions code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 ngrok 隧道管理</h1>
+            <p>管理 ngrok 隧道，获取公网可访问的重定向 URI</p>
+        </div>
+
+        <div class="content">
+            <!-- 使用说明 -->
+            <div class="instructions">
+                <h3>📋 使用说明</h3>
+                <ol>
+                    <li>点击"启动 ngrok 隧道"按钮创建公网隧道</li>
+                    <li>复制生成的重定向 URI</li>
+                    <li>在飞书开放平台配置重定向 URL</li>
+                    <li>使用公网 URL 进行飞书授权测试</li>
+                    <li>测试完成后可以停止隧道</li>
+                </ol>
+            </div>
+
+            <!-- 隧道状态 -->
+            <div class="section">
+                <h2>📊 隧道状态</h2>
+                <div id="tunnelStatus">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>正在获取隧道状态...</p>
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="refreshStatus()">刷新状态</button>
+                    <button class="btn btn-success" onclick="startTunnel()">启动隧道</button>
+                    <button class="btn btn-danger" onclick="stopTunnel()">停止隧道</button>
+                </div>
+            </div>
+
+            <!-- 重定向 URI -->
+            <div class="section">
+                <h2>🔗 重定向 URI</h2>
+                <div id="redirectUri">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>正在获取重定向 URI...</p>
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="copyRedirectUri()">复制 URI</button>
+                    <button class="btn btn-primary" onclick="getRedirectUri()">获取 URI</button>
+                </div>
+            </div>
+
+            <!-- 快速操作 -->
+            <div class="section">
+                <h2>⚡ 快速操作</h2>
+                <div class="btn-group">
+                    <a href="/" class="btn btn-primary">返回主页</a>
+                    <a href="/test" class="btn btn-secondary">测试页面</a>
+                    <button class="btn btn-success" onclick="openAuthTest()">测试授权</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentRedirectUri = '';
+
+        // 页面加载时获取状态
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshStatus();
+            getRedirectUri();
+        });
+
+        // 刷新隧道状态
+        async function refreshStatus() {
+            const statusDiv = document.getElementById('tunnelStatus');
+            statusDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>正在获取隧道状态...</p></div>';
+
+            try {
+                const response = await fetch('/ngrok/status');
+                const data = await response.json();
+
+                if (data.success) {
+                    const status = data.status;
+                    statusDiv.innerHTML = `
+                        <div class="status-card">
+                            <div class="status-item">
+                                <span class="status-label">隧道状态:</span>
+                                <span class="status-value ${status.is_active ? 'active' : 'inactive'}">
+                                    ${status.is_active ? '运行中' : '已停止'}
+                                </span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">公网 URL:</span>
+                                <span class="status-value">${status.public_url || '未启动'}</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">本地端口:</span>
+                                <span class="status-value">${status.port}</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">重定向 URI:</span>
+                                <span class="status-value">${status.redirect_uri || '未启动'}</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML = `<div class="message error">${data.message}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="message error">获取状态失败: ${error.message}</div>`;
+            }
+        }
+
+        // 启动隧道
+        async function startTunnel() {
+            const statusDiv = document.getElementById('tunnelStatus');
+            statusDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>正在启动隧道...</p></div>';
+
+            try {
+                const response = await fetch('/ngrok/start');
+                const data = await response.json();
+
+                if (data.success) {
+                    showMessage(`隧道启动成功！公网 URL: ${data.public_url}`, 'success');
+                    refreshStatus();
+                    getRedirectUri();
+                } else {
+                    showMessage(data.message, 'error');
+                    refreshStatus();
+                }
+            } catch (error) {
+                showMessage(`启动隧道失败: ${error.message}`, 'error');
+                refreshStatus();
+            }
+        }
+
+        // 停止隧道
+        async function stopTunnel() {
+            if (!confirm('确定要停止 ngrok 隧道吗？')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/ngrok/stop');
+                const data = await response.json();
+
+                if (data.success) {
+                    showMessage('隧道已停止', 'success');
+                    refreshStatus();
+                    getRedirectUri();
+                } else {
+                    showMessage(data.message, 'error');
+                }
+            } catch (error) {
+                showMessage(`停止隧道失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 获取重定向 URI
+        async function getRedirectUri() {
+            const uriDiv = document.getElementById('redirectUri');
+            uriDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>正在获取重定向 URI...</p></div>';
+
+            try {
+                const response = await fetch('/ngrok/redirect-uri');
+                const data = await response.json();
+
+                if (data.success) {
+                    currentRedirectUri = data.redirect_uri;
+                    uriDiv.innerHTML = `
+                        <div class="status-card">
+                            <div class="status-item">
+                                <span class="status-label">重定向 URI:</span>
+                                <span class="status-value">${data.redirect_uri}</span>
+                                <button class="copy-btn" onclick="copyToClipboard('${data.redirect_uri}')">复制</button>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    uriDiv.innerHTML = `<div class="message error">${data.message}</div>`;
+                }
+            } catch (error) {
+                uriDiv.innerHTML = `<div class="message error">获取重定向 URI 失败: ${error.message}</div>`;
+            }
+        }
+
+        // 复制重定向 URI
+        function copyRedirectUri() {
+            if (currentRedirectUri) {
+                copyToClipboard(currentRedirectUri);
+            } else {
+                showMessage('没有可复制的重定向 URI', 'error');
+            }
+        }
+
+        // 复制到剪贴板
+        async function copyToClipboard(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                showMessage('已复制到剪贴板', 'success');
+            } catch (error) {
+                // 降级方案
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                showMessage('已复制到剪贴板', 'success');
+            }
+        }
+
+        // 测试授权
+        function openAuthTest() {
+            if (currentRedirectUri) {
+                const authUrl = `/auth`;
+                window.open(authUrl, '_blank');
+            } else {
+                showMessage('请先启动 ngrok 隧道', 'error');
+            }
+        }
+
+        // 显示消息
+        function showMessage(message, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = message;
+            
+            const content = document.querySelector('.content');
+            content.insertBefore(messageDiv, content.firstChild);
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 5000);
+        }
+    </script>
+</body>
+</html> 
