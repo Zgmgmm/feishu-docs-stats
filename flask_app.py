@@ -247,20 +247,13 @@ def get_doc_meta():
         metas = batch_get_meta([request_doc])
         if metas and len(metas) > 0:
             meta = metas[0]
-            # 获取文档标题，优先使用name字段，如果没有则使用其他可用字段
-            title = None
-            if hasattr(meta, 'name') and meta.name:
-                title = meta.name
-            elif hasattr(meta, 'title') and meta.title:
-                title = meta.title
-            elif hasattr(meta, 'display_name') and meta.display_name:
-                title = meta.display_name
-            
             return jsonify({
                 "success": True,
-                "title": title,
+                "title": meta.title,
                 "type": meta.type if hasattr(meta, 'type') else file_type,
-                "token": meta.doc_token if hasattr(meta, 'doc_token') else file_token
+                "token": meta.doc_token if hasattr(meta, 'doc_token') else file_token,
+                "update_time": meta.latest_modify_time,
+                "create_time": meta.create_time
             })
         else:
             return jsonify({

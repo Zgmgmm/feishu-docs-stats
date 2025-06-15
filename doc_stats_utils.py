@@ -13,8 +13,8 @@ from dotenv import load_dotenv
 import lark_oapi as lark
 from lark_oapi.api.wiki.v2 import GetNodeSpaceRequest, GetNodeSpaceResponse, ListSpaceNodeRequest, ListSpaceNodeResponse
 from lark_oapi.api.drive.v1 import GetFileStatisticsRequest, GetFileStatisticsResponse
-from lark_oapi.api.drive.v1.resource.meta import BatchQueryMetaRequest, BatchQueryMetaResponse, Meta
-from lark_oapi.api.drive.v1.model import MetaRequest, RequestDoc
+from lark_oapi.api.drive.v1.resource.meta import BatchQueryMetaRequest, BatchQueryMetaResponse
+from lark_oapi.api.drive.v1.model import MetaRequest, RequestDoc, Meta
 # 导入授权相关函数
 from auth_utils import get_user_access_token, auth_config
 
@@ -82,6 +82,7 @@ class DocumentStats:
     uv_today: int = 0
     pv_today: int = 0
     like_count_today: int = 0
+    update_time: int = 0
     
     @classmethod
     def from_api_stats(cls, node, stats, source_url, is_root=False):
@@ -124,7 +125,8 @@ class DocumentStats:
             timestamp=getattr(stats, 'timestamp', 0),
             uv_today=getattr(stats, 'uv_today', 0),
             pv_today=getattr(stats, 'pv_today', 0),
-            like_count_today=getattr(stats, 'like_count_today', 0)
+            like_count_today=getattr(stats, 'like_count_today', 0),
+            update_time=getattr(stats, 'update_time', 0)
         )
         
     def to_dict(self) -> Dict[str, Any]:
@@ -141,7 +143,8 @@ class DocumentStats:
             "timestamp": self.timestamp,
             "uv_today": self.uv_today,
             "pv_today": self.pv_today,
-            "like_count_today": self.like_count_today
+            "like_count_today": self.like_count_today,
+            "update_time": self.update_time
         }
 
 @dataclass
@@ -359,6 +362,33 @@ def get_file_stats(file_token: str, file_type: str) -> Optional[Any]:
         logger.exception(f"获取文档统计信息异常 (file_token: {file_token}, type: {file_type}): {e}")
         return None
 
+def get_doc_update_time(file_token: str, file_type: str) -> int:
+    """获取文档的更新时间
+    
+    Args:
+        file_token: 文件token
+        file_type: 文件类型
+        
+    Returns:
+        更新时间字符串，如果获取失败则返回空字符串
+    """
+    try:
+        # 创建RequestDoc对象
+        request_doc = RequestDoc.builder() \
+            .doc_token(file_token) \
+            .doc_type(file_type) \
+            .build()
+        
+        # 获取元数据
+        metas = batch_get_meta([request_doc])
+        if metas and len(metas) > 0:
+            meta = metas[0]
+            return meta.latest_modify_time
+        return 0
+    except Exception as e:
+        logger.exception(f"获取文档更新时间失败 (file_token: {file_token}, type: {file_type}): {e}")
+        return 0
+
 def collect_node_stats(node: Union[NodeInfo, Any], stats: Optional[Any], source_url: str, is_root: bool = False) -> Optional[Dict[str, Any]]:
     """收集节点的统计信息并创建统计字典
     
@@ -371,10 +401,20 @@ def collect_node_stats(node: Union[NodeInfo, Any], stats: Optional[Any], source_
     Returns:
         包含统计信息的字典，如果stats为None则返回None
     """
+    # 确定节点token和类型
+    token = node.obj_token if hasattr(node, 'obj_token') and node.obj_token else node.node_token
+    node_type = node.obj_type if hasattr(node, 'obj_type') else "wiki"
+    
+    # 获取文档更新时间
+    update_time = get_doc_update_time(token, node_type)
+    
     # 使用DocumentStats类创建统计信息
     doc_stats = DocumentStats.from_api_stats(node, stats, source_url, is_root)
     if not doc_stats:
         return None
+    
+    # 设置更新时间
+    doc_stats.update_time = update_time
         
     return doc_stats.to_dict()
 

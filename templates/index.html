@@ -717,7 +717,7 @@
                             <th rowspan="2">TYPE</th>
                             <th colspan="3" class="header-group">TOTAL</th>
                             <th colspan="3" class="header-group">TODAY</th>
-                            <th rowspan="2" class="sortable" data-sort="timestamp">TIMESTAMP</th>
+                            <th rowspan="2" class="sortable" data-sort="update_time">UPDATE TIME</th>
                         </tr>
                         <tr>
                             <th class="sortable" data-sort="uv">UV</th>
@@ -1164,8 +1164,31 @@
             tableBody.innerHTML = '';
             statistics.forEach(doc => {
                 const row = document.createElement('tr');
-                // 格式化时间戳
-                const timestamp = doc.timestamp ? new Date(doc.timestamp * 1000).toLocaleString('zh-CN') : '';
+                // 格式化更新时间
+                let updateTime = '';
+                
+                // 为排序准备时间值
+                if (doc.update_time) {
+                    // 如果是时间戳格式，转换为日期
+                    if (typeof doc.update_time === 'number' || doc.update_time[0] === '1') {
+                        updateTime = new Date(doc.update_time * 1000).toLocaleString('zh-CN');
+                        // 保存毫秒时间戳用于排序
+                        doc._sortTime = doc.update_time < 10000000000 ? doc.update_time * 1000 : doc.update_time;
+                    } else {
+                        // 如果是字符串格式，直接显示
+                        updateTime = doc.update_time;
+                        // 尝试解析字符串为时间戳
+                        const date = new Date(doc.update_time);
+                        doc._sortTime = isNaN(date.getTime()) ? 0 : date.getTime();
+                    }
+                } else if (doc.timestamp) {
+                    // 如果没有更新时间，使用时间戳作为备选
+                    updateTime = new Date(doc.timestamp * 1000).toLocaleString('zh-CN');
+                    doc._sortTime = doc.timestamp < 10000000000 ? doc.timestamp * 1000 : doc.timestamp;
+                } else {
+                    doc._sortTime = 0;
+                }
+                
                 row.innerHTML = `
                     <td><a href="${doc.source_url}" target="_blank" style="color: #667eea; text-decoration: none; font-weight: 500;">${doc.title}</a></td>
                     <td>${doc.type}</td>
@@ -1175,7 +1198,7 @@
                     <td>${doc.uv_today || 0}</td>
                     <td>${doc.pv_today || 0}</td>
                     <td>${doc.like_count_today || 0}</td>
-                    <td>${timestamp}</td>
+                    <td>${updateTime}</td>
                 `;
                 tableBody.appendChild(row);
             });
@@ -1255,17 +1278,20 @@
         // 排序统计数据
         function sortStatistics(data, field, direction) {
             return [...data].sort((a, b) => {
-                let aValue = a[field];
-                let bValue = b[field];
+                let aValue, bValue;
                 
                 // 处理时间戳排序
                 if (field === 'timestamp') {
-                    aValue = aValue || 0;
-                    bValue = bValue || 0;
+                    aValue = a[field] || 0;
+                    bValue = b[field] || 0;
+                } else if (field === 'update_time') {
+                    // 使用预处理的排序时间值
+                    aValue = a._sortTime || 0;
+                    bValue = b._sortTime || 0;
                 } else {
                     // 处理数字排序（包括新增的历史数据字段）
-                    aValue = parseInt(aValue) || 0;
-                    bValue = parseInt(bValue) || 0;
+                    aValue = parseInt(a[field]) || 0;
+                    bValue = parseInt(b[field]) || 0;
                 }
                 
                 if (direction === 'asc') {
