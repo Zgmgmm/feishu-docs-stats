@@ -3,4 +3,4 @@ Flask>=2.0.0
 python-dotenv>=0.19.0
 PyJWT
 requests>=2.25.0
-ngrok>=7.0.0
+ngrok>=1.4.0
