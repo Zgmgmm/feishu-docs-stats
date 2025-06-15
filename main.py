@@ -1,12 +1,15 @@
 import lark_oapi as lark
 from lark_oapi.api.wiki.v2 import GetNodeSpaceRequest, GetNodeSpaceResponse, ListSpaceNodeRequest, ListSpaceNodeResponse
 from lark_oapi.api.drive.v1 import GetFileStatisticsRequest, GetFileStatisticsResponse
-from lark_oapi.api.auth.v3 import CreateAppAccessTokenRequest, CreateAppAccessTokenResponse, CreateTenantAccessTokenRequest, CreateTenantAccessTokenResponse
+from lark_oapi.api.auth.v3 import *
 import os
 import json
 import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Any, Union
+from dotenv import load_dotenv
+
+load_dotenv() # 加载 .env 文件中的环境变量
 
 # 配置日志
 logging.basicConfig(
@@ -25,8 +28,8 @@ class Config:
     tenant_access_token: str = os.environ.get("FEISHU_TENANT_ACCESS_TOKEN", "")
     max_depth: int = 5
     input_urls: List[str] = field(default_factory=lambda: [
-        # "https://bytedance.larkoffice.com/wiki/GQ0Owf7EmirsookHOh4cpx4XnMf"
-        "https://bytedance.sg.larkoffice.com/docx/Hvjcd6E7uoJP5exO8K2leqlegcc",
+        "https://bytedance.larkoffice.com/wiki/GQ0Owf7EmirsookHOh4cpx4XnMf"
+        # "https://bytedance.sg.larkoffice.com/docx/Hvjcd6E7uoJP5exO8K2leqlegcc",
         # "https://bytedance.larkoffice.com/wiki/YB5mwIfOVi4jPmkt5e7cuGDenDA"
     ])
 
@@ -37,7 +40,7 @@ config = Config()
 client = lark.Client.builder() \
     .app_id(config.app_id) \
     .app_secret(config.app_secret) \
-    .log_level(lark.LogLevel.DEBUG) \
+    .log_level(lark.LogLevel.INFO) \
     .build()
 
 # --- 数据模型 ---
@@ -99,38 +102,6 @@ def parse_lark_url(url: str) -> Tuple[Optional[str], Optional[str]]:
         logger.exception(f"解析URL时发生异常: {e}")
         return None, None
 
-
-def get_tenant_access_token() -> Optional[str]:
-    """获取租户访问令牌
-    
-    Returns:
-        租户访问令牌，获取失败则返回None
-    """
-    return config.tenant_access_token
-    
-    # 以下是动态获取token的代码，当前未启用
-    # if config.tenant_access_token:
-    #     # 可以加入token过期检查逻辑
-    #     return config.tenant_access_token
-    # 
-    # request = CreateTenantAccessTokenRequest.builder() \
-    #     .request_body(lark.api.auth.v3.CreateTenantAccessTokenRequestBody.builder()
-    #                   .app_id(config.app_id)
-    #                   .app_secret(config.app_secret)
-    #                   .build())
-    # try:
-    #     response: CreateTenantAccessTokenResponse = client.auth.v3.tenant_access_token.create(request)
-    #     if not response.success():
-    #         logger.error(f"获取租户访问令牌失败: {response.code} {response.msg}")
-    #         return None
-    #     
-    #     token = response.data.tenant_access_token
-    #     logger.info(f"成功获取租户访问令牌: {token[:10]}...")
-    #     return token
-    # except Exception as e:
-    #     logger.exception(f"获取租户访问令牌异常: {e}")
-    #     return None
-
 def get_node_space_id(node_token: str) -> Optional[str]:
     """获取文档的空间ID
     
@@ -140,9 +111,6 @@ def get_node_space_id(node_token: str) -> Optional[str]:
     Returns:
         空间ID，获取失败则返回None
     """
-    if not config.user_access_token:
-        logger.error("USER_ACCESS_TOKEN未配置，无法获取空间ID")
-        return None
 
     request = GetNodeSpaceRequest.builder() \
         .token(node_token) \
@@ -177,10 +145,6 @@ def get_all_child_nodes(space_id: str, parent_node_token: str = None, max_depth:
     Returns:
         包含所有子节点的列表
     """
-    if not config.user_access_token:
-        logger.error("USER_ACCESS_TOKEN未配置，无法获取子节点")
-        return []
-        
     # 超过最大深度，停止递归
     if current_depth > max_depth:
         logger.info(f"{'  ' * current_depth}达到最大递归深度 {max_depth}，停止递归")
@@ -188,7 +152,7 @@ def get_all_child_nodes(space_id: str, parent_node_token: str = None, max_depth:
 
     all_nodes = []
     page_token = None
-    indent = "  " * current_depth  # 根据深度生成缩进，便于日志查看层级关系
+    indent = "+" + "-" * current_depth  # 根据深度生成缩进，便于日志查看层级关系
     
     while True:
         # 构建请求
@@ -214,7 +178,7 @@ def get_all_child_nodes(space_id: str, parent_node_token: str = None, max_depth:
             if response.data and response.data.items:
                 for item in response.data.items:
                     all_nodes.append(item)
-                    logger.info(f"{indent}发现子节点: {item.title} (token: {item.node_token}, type: {item.obj_type})")
+                    logger.info(f"{indent}{item.title} (token: {item.node_token}, type: {item.obj_type})")
                     
                     # 递归获取子节点
                     if item.has_child:
@@ -312,17 +276,11 @@ def get_file_stats(file_token: str, file_type: str) -> Optional[Any]:
     Returns:
         统计信息对象，如果获取失败则返回None
     """
-    token = get_tenant_access_token()
-    if not token:
-        logger.error(f"无法获取租户访问令牌，跳过统计 (file_token: {file_token})")
-        return None
-
     request = GetFileStatisticsRequest.builder() \
         .file_token(file_token) \
         .file_type(file_type) \
         .build()
-    
-    options = lark.RequestOption.builder().tenant_access_token(token).build()
+    options = lark.RequestOption.builder().user_access_token(config.user_access_token).build()
 
     try:
         response: GetFileStatisticsResponse = client.drive.v1.file_statistics.get(request, options)
@@ -331,7 +289,7 @@ def get_file_stats(file_token: str, file_type: str) -> Optional[Any]:
             return None
         
         stats = response.data.statistics
-        logger.info(f"统计信息 (token: {file_token}, type: {file_type}): UV={stats.uv}, PV={stats.pv}, Like={stats.like_count}")
+        logger.info(f"统计信息 (token: {file_token}, type: {file_type}): stats: {vars(stats)}")
         return stats
     except Exception as e:
         logger.exception(f"获取文档统计信息异常 (file_token: {file_token}, type: {file_type}): {e}")
@@ -687,11 +645,6 @@ def validate_config() -> bool:
     """
     if not config.app_id or config.app_id == "YOUR_APP_ID" or not config.app_secret or config.app_secret == "YOUR_APP_SECRET":
         logger.error("错误：请在配置中设置 app_id 和 app_secret。")
-        return False
-
-    if not config.user_access_token:
-        logger.error("错误：user_access_token 未配置。请在配置中或环境变量中设置。")
-        logger.error("您需要先获取用户授权凭证，例如通过飞书开放平台文档指引或OAuth2.0流程。")
         return False
 
     if not config.input_urls:
