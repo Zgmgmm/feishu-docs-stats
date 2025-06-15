@@ -203,6 +203,27 @@
             border-radius: 8px;
             margin-bottom: 8px;
             border-left: 4px solid #667eea;
+            transition: all 0.2s ease;
+        }
+
+        .url-item:hover {
+            background: #f0f2f5;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .url-item a {
+            font-weight: 600;
+            color: #667eea;
+            text-decoration: none;
+            margin-bottom: 4px;
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+
+        .url-item a:hover {
+            color: #5a6fd8;
+            text-decoration: underline;
         }
 
         .url-item span {
@@ -625,6 +646,7 @@
 
     <script>
         let urls = [];
+        let urlNames = {}; // 存储URL到文档名称的映射
         let chartInstances = [];
         let isAuthorized = false;
         let jwtToken = null;
@@ -784,16 +806,11 @@
         }
 
         function addUrl() {
-            if (!isAuthorized) {
-                showAuthModal();
-                return;
-            }
-
             const input = document.getElementById('urlInput');
             const url = input.value.trim();
             
             if (!url) {
-                showMessage('请输入有效的文档链接', 'error');
+                showMessage('请输入文档链接', 'error');
                 return;
             }
             
@@ -807,14 +824,75 @@
                 return;
             }
             
+            // 先添加到列表中，显示为"加载中..."
             urls.push(url);
+            urlNames[url] = "加载中...";
             input.value = '';
             updateUrlList();
-            showMessage('链接添加成功', 'success');
+            // showMessage('链接添加成功，正在获取文档名称...', 'success');
+            
+            // 异步获取文档名称
+            getDocName(url);
+        }
+
+        async function getDocName(url) {
+            try {
+                const headers = {
+                    'Content-Type': 'application/json',
+                };
+                
+                if (jwtToken) {
+                    headers['Authorization'] = `Bearer ${jwtToken}`;
+                }
+                
+                const response = await fetch('/doc-meta', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ url: url })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    if (response.status === 401 && errorData.need_auth) {
+                        // 授权失效，清除token并重新检查授权状态
+                        jwtToken = null;
+                        sessionStorage.removeItem('jwt_token');
+                        await checkAuthStatus();
+                        urlNames[url] = "授权失效";
+                        updateUrlList();
+                        return;
+                    } else {
+                        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                    }
+                }
+                
+                const data = await response.json();
+                
+                if (data.success && data.title) {
+                    urlNames[url] = data.title;
+                } else {
+                    // 如果无法获取标题，使用URL的最后部分作为名称
+                    const urlParts = url.split('/');
+                    const lastPart = urlParts[urlParts.length - 1];
+                    urlNames[url] = lastPart || url;
+                }
+                
+                updateUrlList();
+                
+            } catch (error) {
+                console.error('获取文档名称失败:', error);
+                // 如果获取失败，使用URL的最后部分作为名称
+                const urlParts = url.split('/');
+                const lastPart = urlParts[urlParts.length - 1];
+                urlNames[url] = lastPart || url;
+                updateUrlList();
+            }
         }
 
         function removeUrl(index) {
+            const url = urls[index];
             urls.splice(index, 1);
+            delete urlNames[url];
             updateUrlList();
         }
 
@@ -825,8 +903,17 @@
             urls.forEach((url, index) => {
                 const urlItem = document.createElement('div');
                 urlItem.className = 'url-item';
+                
+                const displayName = urlNames[url] || url;
+                const isUrl = displayName === url;
+                
                 urlItem.innerHTML = `
-                    <span>${url}</span>
+                    <div style="flex: 1; display: flex; flex-direction: column;">
+                        <a href="${url}" target="_blank">
+                            ${displayName}
+                        </a>
+                        ${isUrl ? '' : `<span style="font-size: 12px; color: #666; word-break: break-all;">${url}</span>`}
+                    </div>
                     <button class="remove-btn" onclick="removeUrl(${index})">删除</button>
                 `;
                 urlList.appendChild(urlItem);
@@ -835,6 +922,7 @@
 
         function clearUrls() {
             urls = [];
+            urlNames = {};
             updateUrlList();
             showMessage('链接列表已清空', 'success');
         }

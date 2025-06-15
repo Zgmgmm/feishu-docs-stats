@@ -217,6 +217,64 @@ def handle_stats_request():
     }
     return jsonify(response_data)
 
+@app.route('/doc-meta', methods=['POST'])
+def get_doc_meta():
+    """获取单个文档的元数据"""
+    user_token = get_user_access_token()
+    if not user_token:
+        return jsonify({"error": "未授权，请先进行飞书授权", "need_auth": True}), 401
+    
+    data = request.get_json()
+    if not data or 'url' not in data:
+        return jsonify({"error": "Missing 'url' in request body"}), 400
+    
+    url = data['url']
+    
+    try:
+        # 解析URL
+        file_type, file_token = parse_lark_url(url)
+        if not file_type or not file_token:
+            return jsonify({"error": f"无法解析URL: {url}"}), 400
+        
+        # 创建RequestDoc对象
+        from lark_oapi.api.drive.v1.model import RequestDoc
+        request_doc = RequestDoc.builder() \
+            .doc_token(file_token) \
+            .doc_type(file_type) \
+            .build()
+        
+        # 获取元数据
+        metas = batch_get_meta([request_doc])
+        if metas and len(metas) > 0:
+            meta = metas[0]
+            # 获取文档标题，优先使用name字段，如果没有则使用其他可用字段
+            title = None
+            if hasattr(meta, 'name') and meta.name:
+                title = meta.name
+            elif hasattr(meta, 'title') and meta.title:
+                title = meta.title
+            elif hasattr(meta, 'display_name') and meta.display_name:
+                title = meta.display_name
+            
+            return jsonify({
+                "success": True,
+                "title": title,
+                "type": meta.type if hasattr(meta, 'type') else file_type,
+                "token": meta.doc_token if hasattr(meta, 'doc_token') else file_token
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "无法获取文档元数据"
+            }), 404
+            
+    except Exception as e:
+        logger.exception(f"获取文档元数据时发生异常: {e}")
+        return jsonify({
+            "success": False,
+            "error": f"获取文档元数据失败: {str(e)}"
+        }), 500
+
 # ================ 主入口 ================
 if __name__ == "__main__":
     logger.info("启动Flask服务器...")

@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 import lark_oapi as lark
 from lark_oapi.api.wiki.v2 import GetNodeSpaceRequest, GetNodeSpaceResponse, ListSpaceNodeRequest, ListSpaceNodeResponse
 from lark_oapi.api.drive.v1 import GetFileStatisticsRequest, GetFileStatisticsResponse
-
+from lark_oapi.api.drive.v1.resource.meta import BatchQueryMetaRequest, BatchQueryMetaResponse, Meta
+from lark_oapi.api.drive.v1.model import MetaRequest, RequestDoc
 # 导入授权相关函数
 from auth_utils import get_user_access_token, auth_config
 
@@ -302,6 +303,27 @@ def get_all_child_nodes(space_id: str, parent_node_token: str = None) -> List[An
             break
     
     return all_nodes
+
+def batch_get_meta(docs: List[RequestDoc]) -> List[Meta]:
+    # 构造请求对象
+    request: BatchQueryMetaRequest = BatchQueryMetaRequest.builder() \
+        .user_id_type("open_id") \
+        .request_body(MetaRequest.builder()
+            .request_docs(docs)
+            .with_url(False)
+            .build()) \
+        .build()
+
+    # 发起请求
+    user_token = get_user_access_token() 
+    options = lark.RequestOption.builder().user_access_token(user_token).build()
+    response: BatchQueryMetaResponse = client.drive.v1.meta.batch_query(request,options)
+    # 处理失败返回
+    if not response.success():
+        lark.logger.error(
+            f"client.drive.v1.meta.batch_query failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}, resp: \n{json.dumps(json.loads(response.raw.content), indent=4, ensure_ascii=False)}")
+        return None
+    return response.data.metas
 
 def get_file_stats(file_token: str, file_type: str) -> Optional[Any]:
     """获取文档统计信息
