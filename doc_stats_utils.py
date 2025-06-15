@@ -414,6 +414,58 @@ async def get_node_space_id_async(node_token: str, user_token: str) -> Optional[
         return None
 
 def batch_get_meta(docs: List[RequestDoc], user_token: str = None) -> List[Meta]:
+    """批量获取文档元数据，支持分批处理以避免超过API限制
+    
+    Args:
+        docs: RequestDoc对象列表
+        user_token: 用户token
+        
+    Returns:
+        元数据列表
+    """
+    if not docs:
+        return []
+    
+    # 飞书API限制：request_docs最大长度为200
+    BATCH_SIZE = 200
+    all_metas = []
+    total_batches = (len(docs) + BATCH_SIZE - 1) // BATCH_SIZE
+    
+    logger.info(f"开始批量获取元数据，共 {len(docs)} 个文档，分 {total_batches} 批处理")
+    
+    # 分批处理
+    for i in range(0, len(docs), BATCH_SIZE):
+        batch_docs = docs[i:i + BATCH_SIZE]
+        batch_num = i // BATCH_SIZE + 1
+        
+        logger.info(f"处理第 {batch_num}/{total_batches} 批，包含 {len(batch_docs)} 个文档")
+        
+        # 使用单个批次处理函数
+        batch_metas = batch_get_meta_single(batch_docs, user_token)
+        all_metas.extend(batch_metas)
+        
+        logger.info(f"第 {batch_num} 批处理完成，获取到 {len(batch_metas)} 个元数据")
+    
+    logger.info(f"批量获取元数据完成，总共获取到 {len(all_metas)} 个元数据")
+    return all_metas
+
+def batch_get_meta_single(docs: List[RequestDoc], user_token: str = None) -> List[Meta]:
+    """获取单个批次的文档元数据（内部函数）
+    
+    Args:
+        docs: RequestDoc对象列表（不超过200个）
+        user_token: 用户token
+        
+    Returns:
+        元数据列表
+    """
+    if not docs:
+        return []
+    
+    if len(docs) > 200:
+        logger.warning(f"单个批次文档数量超过200个限制: {len(docs)}，将截取前200个")
+        docs = docs[:200]
+    
     # 构造请求对象
     request: BatchQueryMetaRequest = BatchQueryMetaRequest.builder() \
         .user_id_type("open_id") \
@@ -429,14 +481,36 @@ def batch_get_meta(docs: List[RequestDoc], user_token: str = None) -> List[Meta]
     if not user_token:
         logger.error("未找到有效的user_access_token")
         return []
-    options = lark.RequestOption.builder().user_access_token(user_token).build()
-    response: BatchQueryMetaResponse = client.drive.v1.meta.batch_query(request,options)
-    # 处理失败返回
-    if not response.success():
-        lark.logger.error(
-            f"client.drive.v1.meta.batch_query failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}, resp: \n{json.dumps(json.loads(response.raw.content), indent=4, ensure_ascii=False)}")
+        
+    try:
+        options = lark.RequestOption.builder().user_access_token(user_token).build()
+        response: BatchQueryMetaResponse = client.drive.v1.meta.batch_query(request, options)
+        
+        # 处理失败返回
+        if not response.success():
+            error_msg = f"client.drive.v1.meta.batch_query failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}"
+            if response.raw and response.raw.content:
+                try:
+                    error_detail = json.loads(response.raw.content)
+                    error_msg += f", resp: \n{json.dumps(error_detail, indent=4, ensure_ascii=False)}"
+                except:
+                    error_msg += f", raw content: {response.raw.content}"
+            
+            lark.logger.error(error_msg)
+            logger.error(f"批量获取元数据失败: {response.code} - {response.msg}")
+            return []
+            
+        # 返回元数据
+        if response.data and response.data.metas:
+            logger.debug(f"成功获取 {len(response.data.metas)} 个元数据")
+            return response.data.metas
+        else:
+            logger.warning("API返回成功但未获取到元数据")
+            return []
+            
+    except Exception as e:
+        logger.exception(f"批量获取元数据时发生异常: {e}")
         return []
-    return response.data.metas
 
 async def batch_get_stats_async(file_tokens: List[Tuple[str, str]], user_token: str) -> Dict[Tuple[str, str], Any]:
     """异步批量获取文档统计信息
@@ -479,7 +553,7 @@ async def batch_get_stats_async(file_tokens: List[Tuple[str, str]], user_token: 
     return results
 
 async def batch_get_meta_async(docs: List[RequestDoc], user_token: str) -> List[Meta]:
-    """异步批量获取文档元数据
+    """异步批量获取文档元数据，支持分批处理以避免超过API限制
     
     Args:
         docs: RequestDoc对象列表
@@ -488,13 +562,27 @@ async def batch_get_meta_async(docs: List[RequestDoc], user_token: str) -> List[
     Returns:
         元数据列表
     """
-    try:
-        # 将同步调用包装在异步环境中
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, batch_get_meta, docs, user_token)
-    except Exception as e:
-        logger.error(f"批量获取元数据失败: {e}")
+    if not docs:
         return []
+    
+    # 飞书API限制：request_docs最大长度为200
+    BATCH_SIZE = 200
+    all_metas = []
+    
+    # 分批处理
+    for i in range(0, len(docs), BATCH_SIZE):
+        batch_docs = docs[i:i + BATCH_SIZE]
+        
+        try:
+            # 将同步调用包装在异步环境中
+            loop = asyncio.get_event_loop()
+            batch_metas = await loop.run_in_executor(None, batch_get_meta_single, batch_docs, user_token)
+            all_metas.extend(batch_metas)
+        except Exception as e:
+            logger.error(f"批量获取元数据失败 (批次 {i//BATCH_SIZE + 1}): {e}")
+            continue
+    
+    return all_metas
 
 def batch_get_stats(file_tokens: List[Tuple[str, str]], user_token: str = None) -> Dict[Tuple[str, str], Any]:
     """同步批量获取文档统计信息

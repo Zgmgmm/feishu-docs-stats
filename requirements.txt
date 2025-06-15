@@ -1,6 +1,31 @@
+# 飞书开放平台SDK
 lark-oapi>=1.0.0
+
+# Web框架
 Flask>=2.0.0
+
+# 环境变量管理
 python-dotenv>=0.19.0
-PyJWT
+
+# JWT token处理
+PyJWT>=2.0.0
+
+# HTTP请求库
 requests>=2.25.0
+
+# ngrok隧道管理
 ngrok>=1.4.0
+
+# 异步HTTP客户端
+aiohttp>=3.8.0
+
+# 数据类和类型提示
+typing-extensions>=4.0.0
+
+# 日志配置
+colorlog>=6.0.0
+
+# 开发工具（可选）
+# pytest>=7.0.0
+# black>=22.0.0
+# flake8>=4.0.0
