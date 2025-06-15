@@ -268,6 +268,45 @@
             transform: none;
         }
 
+        /* 性能指标样式 */
+        .performance-metrics {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+        }
+
+        .performance-metrics h4 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .metric-item {
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
         .loading {
             display: none;
             text-align: center;
@@ -706,6 +745,12 @@
         <div class="results-section" id="resultsSection">
             <h2>📈 分析结果</h2>
             
+            <!-- 新增：性能指标显示 -->
+            <div class="performance-metrics" id="performanceMetrics" style="display: none;">
+                <h4>🚀 性能指标</h4>
+                <div class="metrics-grid" id="metricsGrid"></div>
+            </div>
+            
             <div class="stats-grid" id="statsGrid"></div>
             
             <h3>📋 详细数据</h3>
@@ -1047,24 +1092,17 @@
         }
 
         async function analyzeData() {
-            if (!isAuthorized) {
-                showAuthModal();
-                return;
-            }
-
             if (urls.length === 0) {
                 showMessage('请先添加文档链接', 'error');
                 return;
             }
-            
+
             const loading = document.getElementById('loading');
-            const resultsSection = document.getElementById('resultsSection');
             const analyzeBtn = document.getElementById('analyzeBtn');
             
             loading.style.display = 'block';
-            resultsSection.style.display = 'none';
             analyzeBtn.disabled = true;
-            
+
             try {
                 const headers = {
                     'Content-Type': 'application/json',
@@ -1074,10 +1112,12 @@
                     headers['Authorization'] = `Bearer ${jwtToken}`;
                 }
                 
+                const requestBody = { urls: urls };
+                
                 const response = await fetch('/stats', {
                     method: 'POST',
                     headers: headers,
-                    body: JSON.stringify({ urls: urls })
+                    body: JSON.stringify(requestBody)
                 });
                 
                 if (!response.ok) {
@@ -1100,7 +1140,7 @@
                     throw new Error(data.error);
                 }
                 
-                displayResults(data.statistics);
+                displayResults(data.statistics, data.performance);
                 
             } catch (error) {
                 console.error('分析失败:', error);
@@ -1111,7 +1151,7 @@
             }
         }
 
-        function displayResults(statistics) {
+        function displayResults(statistics, performance) {
             const resultsSection = document.getElementById('resultsSection');
             resultsSection.style.display = 'block';
             
@@ -1147,6 +1187,15 @@
             
             // 重置表头排序状态
             resetTableSortState();
+            
+            // 显示性能指标
+            const performanceMetrics = document.getElementById('performanceMetrics');
+            if (performance) {
+                displayPerformanceMetrics(performance);
+                performanceMetrics.style.display = 'block';
+            } else {
+                performanceMetrics.style.display = 'none';
+            }
         }
 
         function updateStatsGrid(totalDocs, totalUV, totalPV, totalLike, totalUVToday, totalPVToday, totalLikeToday) {
@@ -1322,6 +1371,31 @@
             sortableHeaders.forEach(header => {
                 header.classList.remove('sort-asc', 'sort-desc');
             });
+        }
+
+        // 显示性能指标
+        function displayPerformanceMetrics(performance) {
+            const metricsGrid = document.getElementById('metricsGrid');
+            
+            // 显示异步处理的性能指标
+            metricsGrid.innerHTML = `
+                <div class="metric-item">
+                    <span class="metric-value">${performance.processing_time_seconds || 'N/A'}</span>
+                    <span class="metric-label">处理时间(秒)</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-value">${performance.docs_per_second || 'N/A'}</span>
+                    <span class="metric-label">文档/秒</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-value">${performance.total_urls || 'N/A'}</span>
+                    <span class="metric-label">输入URL</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-value">${performance.processed_docs || 'N/A'}</span>
+                    <span class="metric-label">处理文档</span>
+                </div>
+            `;
         }
     </script>
 </body>

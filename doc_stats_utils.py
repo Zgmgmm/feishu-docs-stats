@@ -6,6 +6,8 @@
 import os
 import json
 import logging
+import asyncio
+import aiohttp
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Any, Union
 from urllib.parse import urlparse, unquote
@@ -23,6 +25,10 @@ load_dotenv()
 
 # 配置日志
 logger = logging.getLogger('doc-stats')
+
+# 并发控制配置
+MAX_CONCURRENT_REQUESTS = 10  # 最大并发请求数
+BATCH_SIZE = 20  # 批量处理大小
 
 # --- 配置类 ---
 @dataclass
@@ -307,7 +313,107 @@ def get_all_child_nodes(space_id: str, parent_node_token: str = None) -> List[An
     
     return all_nodes
 
-def batch_get_meta(docs: List[RequestDoc]) -> List[Meta]:
+async def get_all_child_nodes_async(space_id: str, user_token: str, parent_node_token: str = None) -> List[Any]:
+    """异步递归获取所有子节点
+    
+    Args:
+        space_id: 知识空间ID
+        user_token: 用户token
+        parent_node_token: 父节点token，如果为None则获取根节点下的所有节点
+        
+    Returns:
+        包含所有子节点的列表
+    """
+    all_nodes = []
+    page_token = None
+    
+    while True:
+        # 构建请求
+        builder = ListSpaceNodeRequest.builder() \
+            .space_id(space_id) \
+            .page_size(50)
+        
+        if parent_node_token:
+            builder.parent_node_token(parent_node_token)
+        if page_token:
+            builder.page_token(page_token)
+            
+        request = builder.build()
+        if not user_token:
+            logger.error("未找到有效的user_access_token")
+            return []
+        
+        options = lark.RequestOption.builder().user_access_token(user_token).build()
+
+        try:
+            # 在异步环境中调用同步API
+            loop = asyncio.get_event_loop()
+            response: ListSpaceNodeResponse = await loop.run_in_executor(
+                None, 
+                lambda: client.wiki.v2.space_node.list(request, options)
+            )
+            
+            if not response.success():
+                logger.error(f"扫描Wiki文档失败 (space_id: {space_id}, parent: {parent_node_token}): {response.code} {response.msg}")
+                break
+            
+            # 处理返回的节点
+            if response.data and response.data.items:
+                for item in response.data.items:
+                    all_nodes.append(item)
+                    logger.info(f"{item.title} (token: {item.node_token}, type: {item.obj_type})")
+                    
+                    # 递归获取子节点（异步）
+                    if item.has_child:
+                        child_nodes = await get_all_child_nodes_async(space_id, user_token, item.node_token)
+                        all_nodes.extend(child_nodes)
+            
+            # 处理分页
+            if response.data and response.data.has_more:
+                page_token = response.data.page_token
+            else:
+                break
+        except Exception as e:
+            logger.exception(f"扫描Wiki文档异常 (space_id: {space_id}, parent: {parent_node_token}): {e}")
+            break
+    
+    return all_nodes
+
+async def get_node_space_id_async(node_token: str, user_token: str) -> Optional[str]:
+    """异步获取文档的空间ID
+    
+    Args:
+        node_token: 节点token
+        user_token: 用户token
+        
+    Returns:
+        空间ID，获取失败则返回None
+    """
+    request = GetNodeSpaceRequest.builder() \
+        .token(node_token) \
+        .obj_type("wiki") \
+        .build()
+    if not user_token:
+        logger.error("未找到有效的user_access_token")
+        return None
+    options = lark.RequestOption.builder().user_access_token(user_token).build()
+    try:
+        loop = asyncio.get_event_loop()
+        response: GetNodeSpaceResponse = await loop.run_in_executor(
+            None,
+            lambda: client.wiki.v2.space.get_node(request, options)
+        )
+        if not response.success():
+            logger.error(f"获取空间ID失败 (token: {node_token}): {response.code} {response.msg}")
+            return None
+        space_id = response.data.node.space_id
+        logger.info(f"获取到空间ID: {space_id} (来自节点: {node_token})")
+        return space_id
+    except Exception as e:
+        logger.exception(f"获取空间ID异常 (token: {node_token}): {e}")
+        return None
+
+def batch_get_meta(docs: List[RequestDoc], user_token: str = None) -> List[Meta]:
     # 构造请求对象
     request: BatchQueryMetaRequest = BatchQueryMetaRequest.builder() \
         .user_id_type("open_id") \
@@ -318,22 +424,113 @@ def batch_get_meta(docs: List[RequestDoc]) -> List[Meta]:
         .build()
 
     # 发起请求
-    user_token = get_user_access_token() 
+    if not user_token:
+        user_token = get_user_access_token()
+    if not user_token:
+        logger.error("未找到有效的user_access_token")
+        return []
     options = lark.RequestOption.builder().user_access_token(user_token).build()
     response: BatchQueryMetaResponse = client.drive.v1.meta.batch_query(request,options)
     # 处理失败返回
     if not response.success():
         lark.logger.error(
             f"client.drive.v1.meta.batch_query failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}, resp: \n{json.dumps(json.loads(response.raw.content), indent=4, ensure_ascii=False)}")
-        return None
+        return []
     return response.data.metas
 
-def get_file_stats(file_token: str, file_type: str) -> Optional[Any]:
+async def batch_get_stats_async(file_tokens: List[Tuple[str, str]], user_token: str) -> Dict[Tuple[str, str], Any]:
+    """异步批量获取文档统计信息
+    
+    Args:
+        file_tokens: 包含(file_token, file_type)元组的列表
+        user_token: 用户token
+        
+    Returns:
+        以(file_token, file_type)为key的统计信息字典
+    """
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+    results = {}
+    
+    async def get_single_stats(file_token: str, file_type: str):
+        async with semaphore:
+            try:
+                # 使用同步API，但在异步环境中调用
+                loop = asyncio.get_event_loop()
+                stats = await loop.run_in_executor(None, get_file_stats, file_token, file_type, user_token)
+                return (file_token, file_type), stats
+            except Exception as e:
+                logger.error(f"获取统计信息失败 (file_token: {file_token}, type: {file_type}): {e}")
+                return (file_token, file_type), None
+    
+    # 创建所有任务
+    tasks = [get_single_stats(token, file_type) for token, file_type in file_tokens]
+    
+    # 并发执行
+    completed_results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # 处理结果
+    for result in completed_results:
+        if isinstance(result, Exception):
+            logger.error(f"任务执行异常: {result}")
+            continue
+        key, stats = result
+        results[key] = stats
+    
+    return results
+
+async def batch_get_meta_async(docs: List[RequestDoc], user_token: str) -> List[Meta]:
+    """异步批量获取文档元数据
+    
+    Args:
+        docs: RequestDoc对象列表
+        user_token: 用户token
+        
+    Returns:
+        元数据列表
+    """
+    try:
+        # 将同步调用包装在异步环境中
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, batch_get_meta, docs, user_token)
+    except Exception as e:
+        logger.error(f"批量获取元数据失败: {e}")
+        return []
+
+def batch_get_stats(file_tokens: List[Tuple[str, str]], user_token: str = None) -> Dict[Tuple[str, str], Any]:
+    """同步批量获取文档统计信息
+    
+    Args:
+        file_tokens: 包含(file_token, file_type)元组的列表
+        user_token: 用户token
+        
+    Returns:
+        以(file_token, file_type)为key的统计信息字典
+    """
+    if not user_token:
+        user_token = get_user_access_token()
+    if not user_token:
+        logger.error("未找到有效的user_access_token")
+        return {}
+    
+    results = {}
+    
+    for file_token, file_type in file_tokens:
+        try:
+            stats = get_file_stats(file_token, file_type, user_token)
+            results[(file_token, file_type)] = stats
+        except Exception as e:
+            logger.error(f"获取统计信息失败 (file_token: {file_token}, type: {file_type}): {e}")
+            results[(file_token, file_type)] = None
+    
+    return results
+
+def get_file_stats(file_token: str, file_type: str, user_token: str = None) -> Optional[Any]:
     """获取文档统计信息
     
     Args:
         file_token: 文件token
         file_type: 文件类型，如'wiki'、'docx'等
+        user_token: 用户token
         
     Returns:
         统计信息对象，如果获取失败则返回None
@@ -342,7 +539,8 @@ def get_file_stats(file_token: str, file_type: str) -> Optional[Any]:
         .file_token(file_token) \
         .file_type(file_type) \
         .build()
-    user_token = get_user_access_token()
+    if not user_token:
+        user_token = get_user_access_token()
     if not user_token:
         logger.error("未找到有效的user_access_token")
         return None
@@ -362,17 +560,24 @@ def get_file_stats(file_token: str, file_type: str) -> Optional[Any]:
         logger.exception(f"获取文档统计信息异常 (file_token: {file_token}, type: {file_type}): {e}")
         return None
 
-def get_doc_update_time(file_token: str, file_type: str) -> int:
+def get_doc_update_time(file_token: str, file_type: str, user_token: str = None) -> int:
     """获取文档的更新时间
     
     Args:
         file_token: 文件token
         file_type: 文件类型
+        user_token: 用户token
         
     Returns:
         更新时间字符串，如果获取失败则返回空字符串
     """
     try:
+        if not user_token:
+            user_token = get_user_access_token()
+        if not user_token:
+            logger.error("未找到有效的user_access_token")
+            return 0
+        
         # 创建RequestDoc对象
         request_doc = RequestDoc.builder() \
             .doc_token(file_token) \
@@ -380,7 +585,7 @@ def get_doc_update_time(file_token: str, file_type: str) -> int:
             .build()
         
         # 获取元数据
-        metas = batch_get_meta([request_doc])
+        metas = batch_get_meta([request_doc], user_token)
         if metas and len(metas) > 0:
             meta = metas[0]
             return meta.latest_modify_time
@@ -389,13 +594,14 @@ def get_doc_update_time(file_token: str, file_type: str) -> int:
         logger.exception(f"获取文档更新时间失败 (file_token: {file_token}, type: {file_type}): {e}")
         return 0
 
-def collect_node_stats(node: Union[NodeInfo, Any], stats: Optional[Any], source_url: str, is_root: bool = False) -> Optional[Dict[str, Any]]:
+def collect_node_stats(node: Union[NodeInfo, Any], stats: Optional[Any], source_url: str, user_token: str = None, is_root: bool = False) -> Optional[Dict[str, Any]]:
     """收集节点的统计信息并创建统计字典
     
     Args:
         node: 节点对象，包含title、token等信息
         stats: 统计信息对象
         source_url: 源URL
+        user_token: 用户token
         is_root: 是否为根节点
         
     Returns:
@@ -406,7 +612,7 @@ def collect_node_stats(node: Union[NodeInfo, Any], stats: Optional[Any], source_
     node_type = node.obj_type if hasattr(node, 'obj_type') else "wiki"
     
     # 获取文档更新时间
-    update_time = get_doc_update_time(token, node_type)
+    update_time = get_doc_update_time(token, node_type, user_token)
     
     # 使用DocumentStats类创建统计信息
     doc_stats = DocumentStats.from_api_stats(node, stats, source_url, is_root)
@@ -540,42 +746,55 @@ def process_wiki_node(file_token: str, space_id: str, url: str) -> Tuple[Optiona
     """处理Wiki节点
     
     Args:
-        file_token: 节点token
+        file_token: 文件token
         space_id: 知识空间ID
         url: 文档URL
         
     Returns:
-        节点统计信息和Wiki信息的元组
+        包含统计信息和Wiki信息的元组
     """
-    node_info_request = GetNodeSpaceRequest.builder().token(file_token).obj_type("wiki").build()
-    user_token = get_user_access_token()
-    if not user_token:
-        logger.error("未找到有效的user_access_token")
-        return None, None
-    
-    node_info_options = lark.RequestOption.builder().user_access_token(user_token).build()
-    
     try:
-        node_info_resp = client.wiki.v2.space.get_node(node_info_request, node_info_options)
-        if not node_info_resp.success() or not node_info_resp.data or not node_info_resp.data.node:
-            logger.error(f"无法获取节点信息: {file_token}")
+        logger.info(f"处理Wiki节点: {file_token} (space_id: {space_id})")
+        
+        # 获取用户token
+        user_token = get_user_access_token()
+        if not user_token:
+            logger.error("未找到有效的user_access_token")
             return None, None
-            
-        root_node = node_info_resp.data.node
-        initial_node_obj_type = root_node.obj_type # 这应该是 'wiki'
-        initial_node_title = root_node.title
         
-        # Wiki 节点本身也可能有 obj_token，指向其对应的文档实体，统计时用 obj_token
-        token_for_stats = root_node.obj_token if hasattr(root_node, 'obj_token') and root_node.obj_token else file_token
-        type_for_stats = initial_node_obj_type # 通常是 'wiki'
+        # 获取文档标题和更新时间
+        request_doc = RequestDoc.builder() \
+            .doc_token(file_token) \
+            .doc_type("wiki") \
+            .build()
         
-        logger.info(f"获取Wiki根节点 '{initial_node_title}' (token_for_stats: {token_for_stats}, type: {type_for_stats}) 的统计信息...")
-        stats = get_file_stats(token_for_stats, type_for_stats)
+        metas = batch_get_meta([request_doc], user_token)
+        title = file_token  # 默认使用token作为标题
+        update_time = 0
         
-        # 收集根节点统计信息
-        doc_stats = collect_node_stats(root_node, stats, url, is_root=True)
+        if metas and len(metas) > 0:
+            meta = metas[0]
+            update_time = meta.latest_modify_time
+            # 使用真实标题
+            if hasattr(meta, 'title') and meta.title:
+                title = meta.title
+            logger.info(f"获取到Wiki节点标题: {title}")
         
-        # 记录处理过的Wiki信息，用于生成树结构
+        # 获取统计信息
+        stats = get_file_stats(file_token, "wiki", user_token)
+        
+        # 创建NodeInfo对象，使用真实标题
+        node_info = NodeInfo(
+            title=title,
+            node_token=file_token,
+            obj_token=file_token,
+            obj_type="wiki"
+        )
+        
+        # 收集统计信息
+        doc_stats = collect_node_stats(node_info, stats, url, user_token, is_root=True)
+        
+        # 创建WikiInfo对象
         wiki_info = WikiInfo(
             token=file_token,
             space_id=space_id,
@@ -589,7 +808,7 @@ def process_wiki_node(file_token: str, space_id: str, url: str) -> Tuple[Optiona
         return None, None
 
 def process_wiki_children(space_id: str, parent_token: str, url: str) -> List[Dict[str, Any]]:
-    """处理Wiki的所有子节点
+    """处理Wiki的所有子节点（优化版本）
     
     Args:
         space_id: 知识空间ID
@@ -599,40 +818,207 @@ def process_wiki_children(space_id: str, parent_token: str, url: str) -> List[Di
     Returns:
         子节点统计信息列表
     """
-    child_stats_list = []
-    
     try:
         logger.info(f"扫描Wiki节点 {parent_token} (space_id: {space_id}) 的子节点...")
+        
+        # 获取用户token
+        user_token = get_user_access_token()
+        if not user_token:
+            logger.error("未找到有效的user_access_token")
+            return []
+        
         child_nodes = get_all_child_nodes(space_id, parent_token)
         
-        if child_nodes:
-            total_nodes = len(child_nodes)
-            logger.info(f"发现 {total_nodes} 个子节点，开始获取统计信息...")
-            
-            # 处理每个子节点
-            for i, node in enumerate(child_nodes, 1):
-                logger.info(f"处理子节点 [{i}/{total_nodes}]: '{node.title}'")
-                
-                if node.obj_token and node.obj_type:
-                    logger.info(f"  获取子节点 '{node.title}' (obj_token: {node.obj_token}, type: {node.obj_type}) 的统计信息...")
-                    stats = get_file_stats(node.obj_token, node.obj_type)
-                    
-                    # 收集子节点统计信息
-                    doc_stats = collect_node_stats(node, stats, url, is_root=False)
-                    if doc_stats:
-                        child_stats_list.append(doc_stats)
-                    else:
-                        logger.warning(f"  无法获取子节点 '{node.title}' 的统计信息")
-                else:
-                    logger.warning(f"  子节点 '{node.title}' (node_token: {node.node_token})缺少 obj_token 或 obj_type，无法获取统计信息。")
-        else:
+        if not child_nodes:
             logger.info(f"Wiki节点 {parent_token} 没有子节点或无法获取子节点列表。")
-            
+            return []
+        
+        total_nodes = len(child_nodes)
+        logger.info(f"发现 {total_nodes} 个子节点，开始批量获取统计信息...")
+        
+        # 收集所有需要获取统计信息的节点
+        nodes_with_tokens = []
+        for node in child_nodes:
+            if node.obj_token and node.obj_type:
+                nodes_with_tokens.append((node.obj_token, node.obj_type))
+        
+        if not nodes_with_tokens:
+            logger.warning("没有找到有效的子节点token")
+            return []
+        
+        # 批量获取统计信息
+        stats_dict = batch_get_stats(nodes_with_tokens, user_token)
+        
+        # 批量获取元数据（用于更新时间和标题）
+        request_docs = []
+        for node in child_nodes:
+            if node.obj_token and node.obj_type:
+                request_doc = RequestDoc.builder() \
+                    .doc_token(node.obj_token) \
+                    .doc_type(node.obj_type) \
+                    .build()
+                request_docs.append(request_doc)
+        
+        metas = batch_get_meta(request_docs, user_token)
+        meta_dict = {}
+        for i, meta in enumerate(metas):
+            if i < len(request_docs):
+                token = request_docs[i].doc_token
+                meta_dict[token] = meta
+        
+        # 处理结果
+        child_stats_list = []
+        for node in child_nodes:
+            if node.obj_token and node.obj_type:
+                stats = stats_dict.get((node.obj_token, node.obj_type))
+                
+                # 获取更新时间和标题
+                update_time = 0
+                title = node.title  # 使用节点原始标题作为默认值
+                
+                if node.obj_token in meta_dict:
+                    meta = meta_dict[node.obj_token]
+                    update_time = meta.latest_modify_time
+                    # 使用元数据中的真实标题
+                    if hasattr(meta, 'title') and meta.title:
+                        title = meta.title
+                
+                # 创建带有真实标题的节点对象
+                node_with_title = NodeInfo(
+                    title=title,
+                    node_token=node.node_token,
+                    obj_token=node.obj_token,
+                    obj_type=node.obj_type
+                )
+                
+                # 创建统计信息
+                doc_stats = collect_node_stats(node_with_title, stats, url, user_token, is_root=False)
+                if doc_stats:
+                    child_stats_list.append(doc_stats)
+        
+        logger.info(f"成功处理 {len(child_stats_list)} 个子节点的统计信息")
         return child_stats_list
         
     except Exception as e:
         logger.exception(f"处理Wiki子节点时发生异常: {e}")
+        return []
+
+async def process_wiki_children_async(space_id: str, parent_token: str, url: str, user_token: str) -> List[Dict[str, Any]]:
+    """异步处理Wiki的所有子节点（优化版本）
+    
+    Args:
+        space_id: 知识空间ID
+        parent_token: 父节点token
+        url: 文档URL
+        user_token: 用户token
+        
+    Returns:
+        子节点统计信息列表
+    """
+    try:
+        logger.info(f"异步扫描Wiki节点 {parent_token} (space_id: {space_id}) 的子节点...")
+        child_nodes = await get_all_child_nodes_async(space_id, user_token, parent_token)
+        
+        if not child_nodes:
+            logger.info(f"Wiki节点 {parent_token} 没有子节点或无法获取子节点列表。")
+            return []
+        
+        total_nodes = len(child_nodes)
+        logger.info(f"发现 {total_nodes} 个子节点，开始批量获取统计信息...")
+        
+        # 收集所有需要获取统计信息的节点
+        nodes_with_tokens = []
+        for node in child_nodes:
+            if node.obj_token and node.obj_type:
+                nodes_with_tokens.append((node.obj_token, node.obj_type))
+        
+        if not nodes_with_tokens:
+            logger.warning("没有找到有效的子节点token")
+            return []
+        
+        # 批量获取统计信息
+        stats_dict = await batch_get_stats_async(nodes_with_tokens, user_token)
+        
+        # 批量获取元数据（用于更新时间和标题）
+        request_docs = []
+        for node in child_nodes:
+            if node.obj_token and node.obj_type:
+                request_doc = RequestDoc.builder() \
+                    .doc_token(node.obj_token) \
+                    .doc_type(node.obj_type) \
+                    .build()
+                request_docs.append(request_doc)
+        
+        metas = await batch_get_meta_async(request_docs, user_token)
+        meta_dict = {}
+        for i, meta in enumerate(metas):
+            if i < len(request_docs):
+                token = request_docs[i].doc_token
+                meta_dict[token] = meta
+        
+        # 处理结果
+        child_stats_list = []
+        for node in child_nodes:
+            if node.obj_token and node.obj_type:
+                stats = stats_dict.get((node.obj_token, node.obj_type))
+                
+                # 获取更新时间和标题
+                update_time = 0
+                title = node.title  # 使用节点原始标题作为默认值
+                
+                if node.obj_token in meta_dict:
+                    meta = meta_dict[node.obj_token]
+                    update_time = meta.latest_modify_time
+                    # 使用元数据中的真实标题
+                    if hasattr(meta, 'title') and meta.title:
+                        title = meta.title
+                
+                # 创建带有真实标题的节点对象
+                node_with_title = NodeInfo(
+                    title=title,
+                    node_token=node.node_token,
+                    obj_token=node.obj_token,
+                    obj_type=node.obj_type
+                )
+                
+                # 创建统计信息
+                doc_stats = collect_node_stats(node_with_title, stats, url, user_token, is_root=False)
+                if doc_stats:
+                    child_stats_list.append(doc_stats)
+        
+        logger.info(f"成功处理 {len(child_stats_list)} 个子节点的统计信息")
         return child_stats_list
+        
+    except Exception as e:
+        logger.exception(f"异步处理Wiki子节点时发生异常: {e}")
+        return []
+
+def collect_node_stats_optimized(node: Union[NodeInfo, Any], stats: Optional[Any], source_url: str, update_time: int, is_root: bool = False) -> Optional[Dict[str, Any]]:
+    """优化的节点统计信息收集函数（避免重复API调用）
+    
+    Args:
+        node: 节点对象，包含title、token等信息
+        stats: 统计信息对象
+        source_url: 源URL
+        update_time: 更新时间（已预先获取）
+        is_root: 是否为根节点
+        
+    Returns:
+        包含统计信息的字典，如果stats为None则返回None
+    """
+    # 确定节点token和类型
+    token = node.obj_token if hasattr(node, 'obj_token') and node.obj_token else node.node_token
+    node_type = node.obj_type if hasattr(node, 'obj_type') else "wiki"
+    
+    # 使用DocumentStats类创建统计信息
+    doc_stats = DocumentStats.from_api_stats(node, stats, source_url, is_root)
+    if not doc_stats:
+        return None
+    
+    # 设置更新时间（使用预先获取的值）
+    doc_stats.update_time = update_time
+        
+    return doc_stats.to_dict()
 
 def process_docx(file_token: str, file_type: str, url: str) -> Optional[Dict[str, Any]]:
     """处理docx文档
@@ -647,17 +1033,179 @@ def process_docx(file_token: str, file_type: str, url: str) -> Optional[Dict[str
     """
     logger.info(f"获取文档 '{file_token}' (type: {file_type}) 的统计信息...")
     
-    # 尝试获取文档标题，如果失败则使用token作为标题
-    title = file_token # 默认标题
+    try:
+        # 获取用户token
+        user_token = get_user_access_token()
+        if not user_token:
+            logger.error("未找到有效的user_access_token")
+            return None
+        
+        # 获取文档标题和更新时间
+        request_doc = RequestDoc.builder() \
+            .doc_token(file_token) \
+            .doc_type(file_type) \
+            .build()
+        
+        metas = batch_get_meta([request_doc], user_token)
+        title = file_token  # 默认使用token作为标题
+        update_time = 0
+        
+        if metas and len(metas) > 0:
+            meta = metas[0]
+            update_time = meta.latest_modify_time
+            # 使用真实标题
+            if hasattr(meta, 'title') and meta.title:
+                title = meta.title
+            logger.info(f"获取到文档标题: {title}")
+        
+        # 获取文档统计信息
+        stats = get_file_stats(file_token, file_type, user_token)
+        
+        # 创建DocxNode对象，使用真实标题
+        docx_node = DocxNode(title, file_token, file_token, file_type)
+        
+        # 使用优化的函数收集统计信息
+        return collect_node_stats(docx_node, stats, url, user_token, is_root=True)
+        
+    except Exception as e:
+        logger.exception(f"处理docx文档时发生异常: {e}")
+        return None
+
+async def process_docx_async(file_token: str, file_type: str, url: str, user_token: str) -> Optional[Dict[str, Any]]:
+    """异步处理docx文档
     
-    # 获取文档统计信息
-    stats = get_file_stats(file_token, file_type)
+    Args:
+        file_token: 文档token
+        file_type: 文档类型
+        url: 文档URL
+        user_token: 用户token
+        
+    Returns:
+        文档统计信息
+    """
+    logger.info(f"异步获取文档 '{file_token}' (type: {file_type}) 的统计信息...")
     
-    # 使用全局定义的DocxNode类创建实例
-    docx_node = DocxNode(title, file_token, file_token, file_type)
+    try:
+        # 并发获取统计信息和元数据
+        loop = asyncio.get_event_loop()
+        
+        # 获取统计信息
+        stats_task = loop.run_in_executor(None, get_file_stats, file_token, file_type, user_token)
+        
+        # 获取元数据
+        request_doc = RequestDoc.builder() \
+            .doc_token(file_token) \
+            .doc_type(file_type) \
+            .build()
+        meta_task = batch_get_meta_async([request_doc], user_token)
+        
+        # 等待两个任务完成
+        stats, metas = await asyncio.gather(stats_task, meta_task, return_exceptions=True)
+        
+        # 处理异常
+        if isinstance(stats, Exception):
+            logger.error(f"获取统计信息异常: {stats}")
+            stats = None
+        if isinstance(metas, Exception):
+            logger.error(f"获取元数据异常: {metas}")
+            metas = []
+        
+        # 获取更新时间和标题
+        update_time = 0
+        title = file_token  # 默认使用token作为标题
+        
+        if metas and len(metas) > 0:
+            meta = metas[0]
+            update_time = meta.latest_modify_time
+            # 使用真实标题
+            if hasattr(meta, 'title') and meta.title:
+                title = meta.title
+            logger.info(f"获取到文档标题: {title}")
+        
+        # 创建DocxNode对象，使用真实标题
+        docx_node = DocxNode(title, file_token, file_token, file_type)
+        
+        # 使用优化的函数收集统计信息
+        return collect_node_stats(docx_node, stats, url, user_token, is_root=True)
+        
+    except Exception as e:
+        logger.exception(f"异步处理docx文档时发生异常: {e}")
+        return None
+
+async def process_wiki_node_async(file_token: str, space_id: str, url: str, user_token: str) -> Tuple[Optional[Dict[str, Any]], Optional[WikiInfo]]:
+    """异步处理Wiki节点
     
-    # 使用辅助函数收集统计信息
-    return collect_node_stats(docx_node, stats, url, is_root=True)
+    Args:
+        file_token: 文件token
+        space_id: 知识空间ID
+        url: 文档URL
+        user_token: 用户token
+        
+    Returns:
+        包含统计信息和Wiki信息的元组
+    """
+    try:
+        logger.info(f"异步处理Wiki节点: {file_token} (space_id: {space_id})")
+        
+        # 并发获取统计信息和元数据
+        loop = asyncio.get_event_loop()
+        
+        # 获取统计信息
+        stats_task = loop.run_in_executor(None, get_file_stats, file_token, "wiki", user_token)
+        
+        # 获取元数据
+        request_doc = RequestDoc.builder() \
+            .doc_token(file_token) \
+            .doc_type("wiki") \
+            .build()
+        meta_task = batch_get_meta_async([request_doc], user_token)
+        
+        # 等待两个任务完成
+        stats, metas = await asyncio.gather(stats_task, meta_task, return_exceptions=True)
+        
+        # 处理异常
+        if isinstance(stats, Exception):
+            logger.error(f"获取统计信息异常: {stats}")
+            stats = None
+        if isinstance(metas, Exception):
+            logger.error(f"获取元数据异常: {metas}")
+            metas = []
+        
+        # 获取更新时间和标题
+        update_time = 0
+        title = file_token  # 默认使用token作为标题
+        
+        if metas and len(metas) > 0:
+            meta = metas[0]
+            update_time = meta.latest_modify_time
+            # 使用真实标题
+            if hasattr(meta, 'title') and meta.title:
+                title = meta.title
+            logger.info(f"获取到Wiki节点标题: {title}")
+        
+        # 创建NodeInfo对象，使用真实标题
+        node_info = NodeInfo(
+            title=title,
+            node_token=file_token,
+            obj_token=file_token,
+            obj_type="wiki"
+        )
+        
+        # 收集统计信息
+        doc_stats = collect_node_stats(node_info, stats, url, user_token, is_root=True)
+        
+        # 创建WikiInfo对象
+        wiki_info = WikiInfo(
+            token=file_token,
+            space_id=space_id,
+            url=url
+        )
+        
+        return doc_stats, wiki_info
+        
+    except Exception as e:
+        logger.exception(f"异步处理Wiki节点时发生异常: {e}")
+        return None, None
 
 def save_doc_stats(all_doc_stats: List[Dict[str, Any]], filename: str = "doc_stats.json") -> None:
     """保存文档统计信息到文件
@@ -782,4 +1330,107 @@ def get_document_statistics(urls: List[str]) -> Tuple[List[Dict[str, Any]], List
     # 对统计结果进行排序
     all_doc_stats.sort(key=lambda x: x.get("uv", 0), reverse=True)
 
+    return all_doc_stats, processed_wikis_data
+
+async def get_document_statistics_async(urls: List[str], user_token: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """异步获取文档统计信息（优化版本）
+
+    Args:
+        urls: 要处理的文档URL列表
+
+    Returns:
+        包含所有文档统计信息和处理过的Wiki信息的元组
+    """
+    logger.info("开始异步处理文档统计...")
+
+    # 验证配置
+    if not validate_config():
+        return [], []
+
+    all_doc_stats = []
+    processed_wikis_data = []
+
+    # 第一步：解析所有URL并获取空间ID
+    url_tasks = []
+    for url_item in urls:
+        logger.info(f"解析URL: {url_item}")
+        file_type, file_token = parse_lark_url(url_item)
+        
+        if not file_type or not file_token:
+            logger.error(f"无法解析URL: {url_item}")
+            continue
+            
+        logger.info(f"解析结果: file_type='{file_type}', file_token='{file_token}'")
+        
+        if file_type == 'wiki':
+            # 异步获取空间ID
+            space_id_task = get_node_space_id_async(file_token, user_token)
+            url_tasks.append((url_item, file_type, file_token, space_id_task))
+        else:
+            # 非Wiki文档，直接处理
+            url_tasks.append((url_item, file_type, file_token, None))
+
+    # 等待所有空间ID获取完成
+    wiki_tasks = []
+    docx_tasks = []
+    
+    for url_item, file_type, file_token, space_id_task in url_tasks:
+        if file_type == 'wiki':
+            space_id = await space_id_task
+            if not space_id:
+                logger.error(f"无法获取知识空间ID: {file_token}")
+                continue
+                
+            # 创建Wiki处理任务
+            wiki_task = process_wiki_node_async(file_token, space_id, url_item, user_token)
+            wiki_tasks.append((url_item, file_token, space_id, wiki_task))
+        elif file_type == 'docx':
+            # 创建docx处理任务
+            docx_task = process_docx_async(file_token, file_type, url_item, user_token)
+            docx_tasks.append((url_item, docx_task))
+
+    # 并发处理所有Wiki节点
+    if wiki_tasks:
+        logger.info(f"开始并发处理 {len(wiki_tasks)} 个Wiki节点...")
+        wiki_results = await asyncio.gather(*[task for _, _, _, task in wiki_tasks], return_exceptions=True)
+        
+        for i, (url_item, file_token, space_id, _) in enumerate(wiki_tasks):
+            result = wiki_results[i]
+            if isinstance(result, Exception):
+                logger.error(f"处理Wiki节点失败: {result}")
+                continue
+                
+            doc_stats, wiki_info_obj = result
+            if doc_stats:
+                all_doc_stats.append(doc_stats)
+            if wiki_info_obj:
+                processed_wikis_data.append({
+                    "token": wiki_info_obj.token,
+                    "space_id": wiki_info_obj.space_id,
+                    "url": wiki_info_obj.url
+                })
+            
+            # 异步处理子节点
+            child_task = process_wiki_children_async(space_id, file_token, url_item, user_token)
+            child_stats = await child_task
+            all_doc_stats.extend(child_stats)
+
+    # 并发处理所有docx文档
+    if docx_tasks:
+        logger.info(f"开始并发处理 {len(docx_tasks)} 个docx文档...")
+        docx_results = await asyncio.gather(*[task for _, task in docx_tasks], return_exceptions=True)
+        
+        for i, (url_item, _) in enumerate(docx_tasks):
+            result = docx_results[i]
+            if isinstance(result, Exception):
+                logger.error(f"处理docx文档失败: {result}")
+                continue
+                
+            if result:
+                all_doc_stats.append(result)
+
+    # 对统计结果进行排序
+    all_doc_stats.sort(key=lambda x: x.get("uv", 0), reverse=True)
+    
+    logger.info(f"异步处理完成，共获取 {len(all_doc_stats)} 个文档的统计信息")
     return all_doc_stats, processed_wikis_data

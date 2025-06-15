@@ -210,11 +210,124 @@ def handle_stats_request():
     input_urls = data['urls']
     if not isinstance(input_urls, list):
         return jsonify({"error": "'urls' must be a list"}), 400
-    doc_stats, processed_wikis = get_document_statistics(input_urls)
+    
+    # 默认使用异步处理
+    try:
+        import asyncio
+        from doc_stats_utils import get_document_statistics_async
+        
+        # 创建新的事件循环
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            start_time = asyncio.get_event_loop().time()
+            doc_stats, processed_wikis = loop.run_until_complete(
+                get_document_statistics_async(input_urls, user_token)
+            )
+            end_time = asyncio.get_event_loop().time()
+            
+            processing_time = end_time - start_time
+            
+        finally:
+            loop.close()
+            
+    except Exception as e:
+        logger.exception(f"异步处理文档统计时发生异常: {e}")
+        return jsonify({"error": f"处理失败: {str(e)}"}), 500
+    
+    # 计算性能指标
+    performance = {
+        "total_urls": len(input_urls),
+        "processed_docs": len(doc_stats),
+        "processing_time_seconds": round(processing_time, 2),
+        "docs_per_second": round(len(doc_stats) / processing_time, 2) if processing_time > 0 else 0
+    }
+    
     response_data = {
         "statistics": doc_stats,
-        "processed_wikis": processed_wikis
+        "processed_wikis": processed_wikis,
+        "performance": performance,
+        "async_mode": True
     }
+    return jsonify(response_data)
+
+@app.route('/stats/batch', methods=['POST'])
+def handle_batch_stats_request():
+    """批量处理文档统计信息的优化接口
+    
+    支持：
+    - 异步并发处理
+    - 批量API调用
+    - 进度跟踪
+    """
+    user_token = get_user_access_token()
+    if not user_token:
+        return jsonify({"error": "未授权，请先进行飞书授权", "need_auth": True}), 401
+    
+    data = request.get_json()
+    if not data or 'urls' not in data:
+        return jsonify({"error": "Missing 'urls' in request body"}), 400
+    
+    input_urls = data['urls']
+    if not isinstance(input_urls, list):
+        return jsonify({"error": "'urls' must be a list"}), 400
+    
+    # 获取配置参数
+    max_concurrent = data.get('max_concurrent', 10)  # 最大并发数
+    batch_size = data.get('batch_size', 20)  # 批量大小
+    enable_progress = data.get('progress', False)  # 是否启用进度跟踪
+    
+    try:
+        import asyncio
+        from doc_stats_utils import get_document_statistics_async, MAX_CONCURRENT_REQUESTS, BATCH_SIZE
+        
+        # 临时更新配置
+        original_max_concurrent = MAX_CONCURRENT_REQUESTS
+        original_batch_size = BATCH_SIZE
+        
+        # 动态更新配置
+        import doc_stats_utils
+        doc_stats_utils.MAX_CONCURRENT_REQUESTS = max_concurrent
+        doc_stats_utils.BATCH_SIZE = batch_size
+        
+        # 创建新的事件循环
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            start_time = asyncio.get_event_loop().time()
+            doc_stats, processed_wikis = loop.run_until_complete(
+                get_document_statistics_async(input_urls, user_token)
+            )
+            end_time = asyncio.get_event_loop().time()
+            
+            processing_time = end_time - start_time
+            
+        finally:
+            loop.close()
+            # 恢复原始配置
+            doc_stats_utils.MAX_CONCURRENT_REQUESTS = original_max_concurrent
+            doc_stats_utils.BATCH_SIZE = original_batch_size
+            
+    except Exception as e:
+        logger.exception(f"批量处理文档统计时发生异常: {e}")
+        return jsonify({"error": f"处理失败: {str(e)}"}), 500
+    
+    response_data = {
+        "statistics": doc_stats,
+        "processed_wikis": processed_wikis,
+        "performance": {
+            "total_urls": len(input_urls),
+            "processed_docs": len(doc_stats),
+            "processing_time_seconds": round(processing_time, 2),
+            "docs_per_second": round(len(doc_stats) / processing_time, 2) if processing_time > 0 else 0,
+            "max_concurrent": max_concurrent,
+            "batch_size": batch_size
+        },
+        "async_mode": True
+    }
+    
     return jsonify(response_data)
 
 @app.route('/doc-meta', methods=['POST'])
