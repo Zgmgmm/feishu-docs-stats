@@ -114,7 +114,8 @@ class DocumentStats:
         if is_root:
             node_url = source_url
         else:
-            node_url = f"{base_url}/wiki/{node.node_token}"
+            # 对于子节点，使用与token字段相同的值生成URL，确保标题和链接对应
+            node_url = f"{base_url}/wiki/{token}"
         
         # 创建统计对象
         return cls(

@@ -844,6 +844,111 @@
         .data-table td:nth-child(7) {
             border-right: 1px solid #dee2e6;
         }
+
+        /* 分页控件样式 */
+        .pagination-container {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            border: 1px solid #e9ecef;
+        }
+
+        .pagination-info {
+            text-align: center;
+            margin-bottom: 15px;
+            color: #6c757d;
+            font-size: 14px;
+        }
+
+        .pagination-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .page-size-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .page-size-selector label {
+            font-size: 14px;
+            color: #495057;
+            font-weight: 500;
+        }
+
+        .page-size-selector select {
+            padding: 6px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.2s ease;
+        }
+
+        .page-size-selector select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.25);
+        }
+
+        .page-navigation {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .pagination-btn {
+            padding: 8px 16px;
+            border: 1px solid #dee2e6;
+            background: white;
+            color: #495057;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .page-info {
+            font-size: 14px;
+            color: #6c757d;
+            font-weight: 500;
+            margin: 0 10px;
+        }
+
+        /* 响应式分页 */
+        @media (max-width: 768px) {
+            .pagination-controls {
+                flex-direction: column;
+                align-items: center;
+                gap: 20px;
+            }
+            
+            .page-navigation {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+        }
     </style>
 </head>
 <body>
@@ -927,6 +1032,30 @@
                     <tbody id="tableBody"></tbody>
                 </table>
             </div>
+            
+            <!-- 分页控件 -->
+            <div class="pagination-container" id="paginationContainer" style="display: none;">
+                <div class="pagination-info">
+                    <span>显示第 <span id="startRecord">1</span> - <span id="endRecord">10</span> 条，共 <span id="totalRecords">0</span> 条记录</span>
+                </div>
+                <div class="pagination-controls">
+                    <div class="page-size-selector">
+                        <label for="pageSizeSelect">每页显示：</label>
+                        <select id="pageSizeSelect" onchange="changePageSize()">
+                            <option value="10">10条</option>
+                            <option value="20">20条</option>
+                            <option value="50">50条</option>
+                        </select>
+                    </div>
+                    <div class="page-navigation">
+                        <button class="pagination-btn" onclick="goToFirstPage()" id="firstPageBtn">首页</button>
+                        <button class="pagination-btn" onclick="goToPrevPage()" id="prevPageBtn">上一页</button>
+                        <span class="page-info">第 <span id="currentPage">1</span> 页，共 <span id="totalPages">1</span> 页</span>
+                        <button class="pagination-btn" onclick="goToNextPage()" id="nextPageBtn">下一页</button>
+                        <button class="pagination-btn" onclick="goToLastPage()" id="lastPageBtn">末页</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -939,6 +1068,12 @@
         let currentStatistics = []; // 存储当前统计数据
         let currentSortField = null; // 当前排序字段
         let currentSortDirection = 'asc'; // 当前排序方向
+        
+        // 分页相关变量
+        let currentPage = 1; // 当前页码
+        let pageSize = 10; // 每页显示条数
+        let totalPages = 1; // 总页数
+        let filteredStatistics = []; // 过滤后的统计数据（用于分页）
 
         // 页面加载时检查授权状态
         document.addEventListener('DOMContentLoaded', function() {
@@ -1330,8 +1465,29 @@
             const resultsSection = document.getElementById('resultsSection');
             resultsSection.style.display = 'block';
             
-            // 保存统计数据
-            currentStatistics = [...statistics];
+            // 保存统计数据并初始化排序时间
+            currentStatistics = statistics.map(doc => {
+                const newDoc = { ...doc };
+                // 初始化_sortTime
+                if (newDoc.update_time) {
+                    if (typeof newDoc.update_time === 'number' || newDoc.update_time[0] === '1') {
+                        newDoc._sortTime = newDoc.update_time < 10000000000 ? newDoc.update_time * 1000 : newDoc.update_time;
+                    } else {
+                        const date = new Date(newDoc.update_time);
+                        newDoc._sortTime = isNaN(date.getTime()) ? 0 : date.getTime();
+                    }
+                } else if (newDoc.timestamp) {
+                    newDoc._sortTime = newDoc.timestamp < 10000000000 ? newDoc.timestamp * 1000 : newDoc.timestamp;
+                } else {
+                    newDoc._sortTime = 0;
+                }
+                return newDoc;
+            });
+            filteredStatistics = [...currentStatistics];
+            
+            // 重置分页状态
+            currentPage = 1;
+            pageSize = 10;
             
             // 重置排序状态
             currentSortField = null;
@@ -1345,20 +1501,20 @@
             });
             chartInstances = [];
             
-            // 计算统计数据
-            const totalDocs = statistics.length;
-            const totalUV = statistics.reduce((sum, doc) => sum + (doc.uv || 0), 0);
-            const totalPV = statistics.reduce((sum, doc) => sum + (doc.pv || 0), 0);
-            const totalLike = statistics.reduce((sum, doc) => sum + (doc.like_count || 0), 0);
-            const totalUVToday = statistics.reduce((sum, doc) => sum + (doc.uv_today || 0), 0);
-            const totalPVToday = statistics.reduce((sum, doc) => sum + (doc.pv_today || 0), 0);
-            const totalLikeToday = statistics.reduce((sum, doc) => sum + (doc.like_count_today || 0), 0);
+            // 计算统计数据 - 使用currentStatistics而不是原始statistics
+            const totalDocs = currentStatistics.length;
+            const totalUV = currentStatistics.reduce((sum, doc) => sum + (doc.uv || 0), 0);
+            const totalPV = currentStatistics.reduce((sum, doc) => sum + (doc.pv || 0), 0);
+            const totalLike = currentStatistics.reduce((sum, doc) => sum + (doc.like_count || 0), 0);
+            const totalUVToday = currentStatistics.reduce((sum, doc) => sum + (doc.uv_today || 0), 0);
+            const totalPVToday = currentStatistics.reduce((sum, doc) => sum + (doc.pv_today || 0), 0);
+            const totalLikeToday = currentStatistics.reduce((sum, doc) => sum + (doc.like_count_today || 0), 0);
             
             // 更新统计卡片
             updateStatsGrid(totalDocs, totalUV, totalPV, totalLike, totalUVToday, totalPVToday, totalLikeToday);
             
-            // 更新数据表格
-            updateDataTable(statistics);
+            // 更新数据表格和分页
+            updateDataTableWithPagination();
             
             // 重置表头排序状态
             resetTableSortState();
@@ -1382,44 +1538,55 @@
             `;
         }
 
-        function updateDataTable(statistics) {
+        function updateDataTableWithPagination() {
             const tableBody = document.getElementById('tableBody');
             tableBody.innerHTML = '';
-            statistics.forEach(doc => {
+            
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const paginatedData = filteredStatistics.slice(startIndex, endIndex);
+            
+            // 添加调试信息
+            console.log('分页数据:', {
+                currentPage,
+                pageSize,
+                startIndex,
+                endIndex,
+                totalRecords: filteredStatistics.length,
+                paginatedDataLength: paginatedData.length
+            });
+            
+            paginatedData.forEach((doc, index) => {
                 const row = document.createElement('tr');
                 // 格式化更新时间
                 let updateTime = '';
                 
-                // 为排序准备时间值
-                if (doc.update_time) {
-                    // 如果是时间戳格式，转换为日期
-                    if (typeof doc.update_time === 'number' || doc.update_time[0] === '1') {
-                        updateTime = new Date(doc.update_time * 1000).toLocaleString('zh-CN');
-                        // 保存毫秒时间戳用于排序
-                        doc._sortTime = doc.update_time < 10000000000 ? doc.update_time * 1000 : doc.update_time;
-                    } else {
-                        // 如果是字符串格式，直接显示
-                        updateTime = doc.update_time;
-                        // 尝试解析字符串为时间戳
-                        const date = new Date(doc.update_time);
-                        doc._sortTime = isNaN(date.getTime()) ? 0 : date.getTime();
-                    }
-                } else if (doc.timestamp) {
-                    // 如果没有更新时间，使用时间戳作为备选
-                    updateTime = new Date(doc.timestamp * 1000).toLocaleString('zh-CN');
-                    doc._sortTime = doc.timestamp < 10000000000 ? doc.timestamp * 1000 : doc.timestamp;
+                // 使用已初始化的_sortTime
+                if (doc._sortTime) {
+                    updateTime = new Date(doc._sortTime).toLocaleString('zh-CN');
                 } else {
-                    doc._sortTime = 0;
+                    updateTime = '未知时间';
                 }
                 
                 // 获取TYPE对应的CSS类名
                 const typeClass = getTypeClass(doc.type);
                 
+                // 确保标题字段有值，如果为空则使用默认值
+                const displayTitle = doc.title || doc.token || '未知标题';
+                
+                // 添加调试信息
+                console.log(`第${index + 1}条数据:`, {
+                    title: doc.title,
+                    token: doc.token,
+                    source_url: doc.source_url,
+                    displayTitle
+                });
+                
                 row.innerHTML = `
                     <td>
                         <div class="file-info">
                             <span class="file-type-badge ${typeClass}">${doc.type}</span>
-                            <a href="${doc.source_url}" target="_blank" class="file-title">${doc.title}</a>
+                            <a href="${doc.source_url}" target="_blank" class="file-title">${displayTitle}</a>
                         </div>
                     </td>
                     <td>${doc.uv || 0}</td>
@@ -1432,6 +1599,9 @@
                 `;
                 tableBody.appendChild(row);
             });
+            
+            // 更新分页信息
+            updatePagination();
         }
 
         // 获取TYPE对应的CSS类名
@@ -1524,9 +1694,13 @@
             
             // 排序数据
             const sortedData = sortStatistics(currentStatistics, sortField, currentSortDirection);
+            filteredStatistics = sortedData;
+            
+            // 重置到第一页
+            currentPage = 1;
             
             // 更新表格显示
-            updateDataTable(sortedData);
+            updateDataTableWithPagination();
         }
 
         // 排序统计数据
@@ -1601,6 +1775,76 @@
                     <span class="metric-label">处理文档</span>
                 </div>
             `;
+        }
+
+        // 分页相关函数
+        function updatePagination() {
+            const totalRecords = filteredStatistics.length;
+            totalPages = Math.ceil(totalRecords / pageSize);
+            
+            // 确保当前页在有效范围内
+            if (currentPage > totalPages) {
+                currentPage = totalPages || 1;
+            }
+            
+            // 更新分页信息显示
+            const startRecord = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+            const endRecord = Math.min(currentPage * pageSize, totalRecords);
+            
+            document.getElementById('startRecord').textContent = startRecord;
+            document.getElementById('endRecord').textContent = endRecord;
+            document.getElementById('totalRecords').textContent = totalRecords;
+            document.getElementById('currentPage').textContent = currentPage;
+            document.getElementById('totalPages').textContent = totalPages;
+            
+            // 更新按钮状态
+            document.getElementById('firstPageBtn').disabled = currentPage === 1;
+            document.getElementById('prevPageBtn').disabled = currentPage === 1;
+            document.getElementById('nextPageBtn').disabled = currentPage === totalPages;
+            document.getElementById('lastPageBtn').disabled = currentPage === totalPages;
+            
+            // 显示或隐藏分页控件
+            const paginationContainer = document.getElementById('paginationContainer');
+            if (totalRecords > 0) {
+                paginationContainer.style.display = 'block';
+            } else {
+                paginationContainer.style.display = 'none';
+            }
+        }
+
+        function changePageSize() {
+            const newPageSize = parseInt(document.getElementById('pageSizeSelect').value);
+            pageSize = newPageSize;
+            currentPage = 1; // 重置到第一页
+            updateDataTableWithPagination();
+        }
+
+        function goToFirstPage() {
+            if (currentPage !== 1) {
+                currentPage = 1;
+                updateDataTableWithPagination();
+            }
+        }
+
+        function goToPrevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                updateDataTableWithPagination();
+            }
+        }
+
+        function goToNextPage() {
+            if (currentPage < totalPages) {
+                currentPage++;
+                updateDataTableWithPagination();
+            }
+        }
+
+        function goToLastPage() {
+            if (currentPage !== totalPages) {
+                currentPage = totalPages;
+                updateDataTableWithPagination();
+            }
         }
     </script>
 </body>
