@@ -77,6 +77,10 @@ class DocumentStats:
     like_count: int = 0
     comment_count: int = 0
     edit_count: int = 0
+    timestamp: int = 0
+    uv_today: int = 0
+    pv_today: int = 0
+    like_count_today: int = 0
     
     @classmethod
     def from_api_stats(cls, node, stats, source_url, is_root=False):
@@ -111,26 +115,32 @@ class DocumentStats:
             type=node.obj_type,
             node_token=node.node_token,
             source_url=node_url,
-            uv=stats.uv,
-            pv=stats.pv,
-            like_count=stats.like_count,
+            uv=getattr(stats, 'uv', 0),
+            pv=getattr(stats, 'pv', 0),
+            like_count=getattr(stats, 'like_count', 0),
             comment_count=getattr(stats, 'comment_count', 0),
-            edit_count=getattr(stats, 'edit_count', 0)
+            edit_count=getattr(stats, 'edit_count', 0),
+            timestamp=getattr(stats, 'timestamp', 0),
+            uv_today=getattr(stats, 'uv_today', 0),
+            pv_today=getattr(stats, 'pv_today', 0),
+            like_count_today=getattr(stats, 'like_count_today', 0)
         )
         
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
+        """转换为字典，字段名全部英文，顺序与FileStatistics一致，保留文档信息"""
         return {
             "title": self.title,
-            "token": self.token,
             "type": self.type,
+            "token": self.token,
             "node_token": self.node_token,
             "source_url": self.source_url,
             "uv": self.uv,
             "pv": self.pv,
             "like_count": self.like_count,
-            "comment_count": self.comment_count,
-            "edit_count": self.edit_count
+            "timestamp": self.timestamp,
+            "uv_today": self.uv_today,
+            "pv_today": self.pv_today,
+            "like_count_today": self.like_count_today
         }
 
 @dataclass

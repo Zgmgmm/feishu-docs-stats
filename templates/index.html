@@ -277,6 +277,17 @@
             box-shadow: 0 10px 30px rgba(0,0,0,0.1);
         }
 
+        .results-section h2 {
+            margin-bottom: 16px;
+            color: #333;
+        }
+
+        .results-section h3 {
+            /* margin-top: 40px; */
+            margin-bottom: 20px;
+            color: #555;
+        }
+
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -287,24 +298,48 @@
         .stat-card {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 20px;
-            border-radius: 10px;
+            padding: 8px 12px 10px 12px;
+            border-radius: 12px;
             text-align: center;
+            min-width: 0;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
         }
 
         .stat-card h3 {
-            font-size: 2rem;
-            margin-bottom: 5px;
+            font-size: 1.3rem;
+            font-weight: 800;
+            margin-bottom: 2px;
+            word-break: break-all;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            letter-spacing: -0.5px;
+            color: #ffffff;
         }
 
         .stat-card p {
-            opacity: 0.9;
-            font-size: 0.9rem;
+            opacity: 1;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-bottom: 0;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            color: #f0f4ff;
         }
 
         .data-table {
             width: 100%;
             border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .table-container {
+            overflow-x: auto;
             margin-top: 20px;
         }
 
@@ -345,7 +380,7 @@
 
         @media (max-width: 768px) {
             .stats-grid {
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                grid-template-columns: repeat(2, 1fr);
             }
             
             .auth-section {
@@ -570,20 +605,21 @@
             <div class="stats-grid" id="statsGrid"></div>
             
             <h3>📋 详细数据</h3>
-            <table class="data-table" id="dataTable">
-                <thead>
-                    <tr>
-                        <th>文档</th>
-                        <th>类型</th>
-                        <th>独立访客</th>
-                        <th>页面访问</th>
-                        <th>点赞数</th>
-                        <th>评论数</th>
-                        <th>编辑次数</th>
-                    </tr>
-                </thead>
-                <tbody id="tableBody"></tbody>
-            </table>
+            <div class="table-container">
+                <table class="data-table" id="dataTable">
+                    <thead>
+                        <tr>
+                            <th>TITLE</th>
+                            <th>TYPE</th>
+                            <th>UV(TODAY)</th>
+                            <th>PV(TODAY)</th>
+                            <th>LIKE_COUNT(TODAY)</th>
+                            <th>TIMESTAMP</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -900,53 +936,44 @@
             
             // 计算统计数据
             const totalDocs = statistics.length;
-            const totalUV = statistics.reduce((sum, doc) => sum + doc.uv, 0);
-            const totalPV = statistics.reduce((sum, doc) => sum + doc.pv, 0);
-            const totalLikes = statistics.reduce((sum, doc) => sum + doc.like_count, 0);
+            const totalUV = statistics.reduce((sum, doc) => sum + (doc.uv || 0), 0);
+            const totalPV = statistics.reduce((sum, doc) => sum + (doc.pv || 0), 0);
+            const totalLike = statistics.reduce((sum, doc) => sum + (doc.like_count || 0), 0);
+            const totalUVToday = statistics.reduce((sum, doc) => sum + (doc.uv_today || 0), 0);
+            const totalPVToday = statistics.reduce((sum, doc) => sum + (doc.pv_today || 0), 0);
+            const totalLikeToday = statistics.reduce((sum, doc) => sum + (doc.like_count_today || 0), 0);
             
             // 更新统计卡片
-            updateStatsGrid(totalDocs, totalUV, totalPV, totalLikes);
+            updateStatsGrid(totalDocs, totalUV, totalPV, totalLike, totalUVToday, totalPVToday, totalLikeToday);
             
             // 更新数据表格
             updateDataTable(statistics);
         }
 
-        function updateStatsGrid(totalDocs, totalUV, totalPV, totalLikes) {
+        function updateStatsGrid(totalDocs, totalUV, totalPV, totalLike, totalUVToday, totalPVToday, totalLikeToday) {
             const statsGrid = document.getElementById('statsGrid');
             statsGrid.innerHTML = `
-                <div class="stat-card">
-                    <h3>${totalDocs}</h3>
-                    <p>文档总数</p>
-                </div>
-                <div class="stat-card">
-                    <h3>${totalUV.toLocaleString()}</h3>
-                    <p>总独立访客</p>
-                </div>
-                <div class="stat-card">
-                    <h3>${totalPV.toLocaleString()}</h3>
-                    <p>总页面访问</p>
-                </div>
-                <div class="stat-card">
-                    <h3>${totalLikes.toLocaleString()}</h3>
-                    <p>总点赞数</p>
-                </div>
+                <div class="stat-card"><h3>${totalDocs}</h3><p>count</p></div>
+                <div class="stat-card"><h3>${totalUV}(${totalUVToday})</h3><p>uv(today)</p></div>
+                <div class="stat-card"><h3>${totalPV}(${totalPVToday})</h3><p>pv(today)</p></div>
+                <div class="stat-card"><h3>${totalLike}(${totalLikeToday})</h3><p>like_count(today)</p></div>
             `;
         }
 
         function updateDataTable(statistics) {
             const tableBody = document.getElementById('tableBody');
             tableBody.innerHTML = '';
-            
             statistics.forEach(doc => {
                 const row = document.createElement('tr');
+                // 格式化时间戳
+                const timestamp = doc.timestamp ? new Date(doc.timestamp * 1000).toLocaleString('zh-CN') : '';
                 row.innerHTML = `
                     <td><a href="${doc.source_url}" target="_blank" style="color: #667eea; text-decoration: none; font-weight: 500;">${doc.title}</a></td>
                     <td>${doc.type}</td>
-                    <td>${doc.uv.toLocaleString()}</td>
-                    <td>${doc.pv.toLocaleString()}</td>
-                    <td>${doc.like_count.toLocaleString()}</td>
-                    <td>${doc.comment_count.toLocaleString()}</td>
-                    <td>${doc.edit_count.toLocaleString()}</td>
+                    <td>${doc.uv}(${doc.uv_today})</td>
+                    <td>${doc.pv}(${doc.pv_today})</td>
+                    <td>${doc.like_count}(${doc.like_count_today})</td>
+                    <td>${timestamp}</td>
                 `;
                 tableBody.appendChild(row);
             });
