@@ -30,7 +30,6 @@ class Config:
     app_id: str = os.environ.get("FEISHU_APP_ID", "")
     app_secret: str = os.environ.get("FEISHU_APP_SECRET", "")
     user_access_token: str = os.environ.get("FEISHU_USER_ACCESS_TOKEN", "")
-    max_depth: int = 5
     input_urls: List[str] = field(default_factory=lambda: [
         "https://bytedance.larkoffice.com/wiki/GQ0Owf7EmirsookHOh4cpx4XnMf"
         # "https://bytedance.sg.larkoffice.com/docx/Hvjcd6E7uoJP5exO8K2leqlegcc",
@@ -234,26 +233,18 @@ def get_node_space_id(node_token: str) -> Optional[str]:
         logger.exception(f"获取空间ID异常 (token: {node_token}): {e}")
         return None
 
-def get_all_child_nodes(space_id: str, parent_node_token: str = None, max_depth: int = 5, current_depth: int = 0) -> List[Any]:
+def get_all_child_nodes(space_id: str, parent_node_token: str = None) -> List[Any]:
     """递归获取所有子节点
     
     Args:
         space_id: 知识空间ID
         parent_node_token: 父节点token，如果为None则获取根节点下的所有节点
-        max_depth: 最大递归深度，防止过深递归
-        current_depth: 当前递归深度，用于日志缩进和深度控制
         
     Returns:
         包含所有子节点的列表
     """
-    # 超过最大深度，停止递归
-    if current_depth > max_depth:
-        logger.info(f"{'  ' * current_depth}达到最大递归深度 {max_depth}，停止递归")
-        return []
-
     all_nodes = []
     page_token = None
-    indent = "+" + "-" * current_depth  # 根据深度生成缩进，便于日志查看层级关系
     
     while True:
         # 构建请求
@@ -277,18 +268,18 @@ def get_all_child_nodes(space_id: str, parent_node_token: str = None, max_depth:
         try:
             response: ListSpaceNodeResponse = client.wiki.v2.space_node.list(request, options)
             if not response.success():
-                logger.error(f"{indent}扫描Wiki文档失败 (space_id: {space_id}, parent: {parent_node_token}): {response.code} {response.msg}")
+                logger.error(f"扫描Wiki文档失败 (space_id: {space_id}, parent: {parent_node_token}): {response.code} {response.msg}")
                 break
             
             # 处理返回的节点
             if response.data and response.data.items:
                 for item in response.data.items:
                     all_nodes.append(item)
-                    logger.info(f"{indent}{item.title} (token: {item.node_token}, type: {item.obj_type})")
+                    logger.info(f"{item.title} (token: {item.node_token}, type: {item.obj_type})")
                     
                     # 递归获取子节点
                     if item.has_child:
-                        child_nodes = get_all_child_nodes(space_id, item.node_token, max_depth, current_depth + 1)
+                        child_nodes = get_all_child_nodes(space_id, item.node_token)
                         all_nodes.extend(child_nodes)
             
             # 处理分页
@@ -297,7 +288,7 @@ def get_all_child_nodes(space_id: str, parent_node_token: str = None, max_depth:
             else:
                 break
         except Exception as e:
-            logger.exception(f"{indent}扫描Wiki文档异常 (space_id: {space_id}, parent: {parent_node_token}): {e}")
+            logger.exception(f"扫描Wiki文档异常 (space_id: {space_id}, parent: {parent_node_token}): {e}")
             break
     
     return all_nodes
@@ -355,13 +346,12 @@ def collect_node_stats(node: Union[NodeInfo, Any], stats: Optional[Any], source_
         
     return doc_stats.to_dict()
 
-def build_wiki_tree(space_id: str, root_node_token: str, max_depth: int = 5) -> Optional[WikiNode]:
+def build_wiki_tree(space_id: str, root_node_token: str) -> Optional[WikiNode]:
     """构建Wiki节点的树形结构
     
     Args:
         space_id: 知识空间ID
         root_node_token: 根节点token
-        max_depth: 最大递归深度
         
     Returns:
         表示树形结构的WikiNode对象
@@ -379,7 +369,7 @@ def build_wiki_tree(space_id: str, root_node_token: str, max_depth: int = 5) -> 
         )
         
         # 从根节点开始构建树
-        _build_subtree(space_id, root_node_token, tree, 1, max_depth)
+        _build_subtree(space_id, root_node_token, tree)
         return tree
         
     except Exception as e:
@@ -414,20 +404,15 @@ def _get_root_node_info(root_node_token: str) -> Optional[Any]:
         logger.exception(f"获取根节点信息时发生异常: {e}")
         return None
 
-def _build_subtree(space_id: str, parent_token: str, current_tree: WikiNode, current_depth: int, max_depth: int) -> None:
+def _build_subtree(space_id: str, parent_token: str, current_tree: WikiNode) -> None:
     """递归构建子节点树
     
     Args:
         space_id: 知识空间ID
         parent_token: 父节点token
         current_tree: 当前树节点
-        current_depth: 当前递归深度
-        max_depth: 最大递归深度
     """
-    if current_depth > max_depth:
-        return
-        
-    child_nodes = get_all_child_nodes(space_id, parent_token, max_depth=1, current_depth=0)
+    child_nodes = get_all_child_nodes(space_id, parent_token)
     for node in child_nodes:
         child = WikiNode(
             title=node.title,
@@ -438,7 +423,7 @@ def _build_subtree(space_id: str, parent_token: str, current_tree: WikiNode, cur
         
         # 如果是wiki类型，递归获取其子节点
         if node.obj_type == "wiki":
-            _build_subtree(space_id, node.node_token, child, current_depth + 1, max_depth)
+            _build_subtree(space_id, node.node_token, child)
 
 def print_wiki_tree(tree: Optional[WikiNode], indent: int = 0, prefix: str = "") -> None:
     """打印Wiki树形结构
@@ -546,7 +531,7 @@ def process_wiki_children(space_id: str, parent_token: str, url: str) -> List[Di
     
     try:
         logger.info(f"扫描Wiki节点 {parent_token} (space_id: {space_id}) 的子节点...")
-        child_nodes = get_all_child_nodes(space_id, parent_token, config.max_depth)
+        child_nodes = get_all_child_nodes(space_id, parent_token)
         
         if child_nodes:
             total_nodes = len(child_nodes)
