@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>文档统计分析系统</title>
+    <title>Feishu-Doc-Stats</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <style>
@@ -360,7 +360,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📊 文档统计分析系统</h1>
+            <h1>📊 Feishu-Doc-Stats</h1>
             <p>输入飞书文档链接，获取详细的访问统计和数据分析</p>
         </div>
 
@@ -444,7 +444,6 @@
                         <th>点赞数</th>
                         <th>评论数</th>
                         <th>编辑次数</th>
-                        <th>操作</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody"></tbody>
@@ -923,18 +922,13 @@
             statistics.forEach(doc => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td>${doc.title}</td>
+                    <td><a href="${doc.source_url}" target="_blank" style="color: #667eea; text-decoration: none; font-weight: 500;">${doc.title}</a></td>
                     <td>${doc.type}</td>
                     <td>${doc.uv.toLocaleString()}</td>
                     <td>${doc.pv.toLocaleString()}</td>
                     <td>${doc.like_count.toLocaleString()}</td>
                     <td>${doc.comment_count.toLocaleString()}</td>
                     <td>${doc.edit_count.toLocaleString()}</td>
-                    <td>
-                        <a href="${doc.source_url}" target="_blank" class="btn" style="padding: 5px 10px; font-size: 12px;">
-                            查看文档
-                        </a>
-                    </td>
                 `;
                 tableBody.appendChild(row);
             });
