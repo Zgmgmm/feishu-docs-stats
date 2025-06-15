@@ -53,7 +53,7 @@
             border-radius: 20px;
             padding: 12px 16px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            min-width: 280px;
+            min-width: 240px;
             z-index: 100;
             transition: all 0.3s ease;
         }
@@ -304,8 +304,6 @@
         }
 
         .results-section h3 {
-            /* margin-top: 40px; */
-            margin-bottom: 20px;
             color: #555;
         }
 
@@ -361,20 +359,53 @@
 
         .table-container {
             overflow-x: auto;
-            margin-top: 20px;
-        }
-
-        .data-table th,
-        .data-table td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
         }
 
         .data-table th {
             background: #f8f9fa;
             font-weight: 600;
             color: #555;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            transition: background-color 0.2s ease;
+            padding: 12px 8px;
+            font-size: 0.9rem;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .data-table th:hover {
+            background: #e9ecef;
+        }
+
+        .data-table th.sortable {
+            padding-right: 25px;
+        }
+
+        .data-table th.sortable::after {
+            content: '↕';
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 12px;
+            color: #999;
+            transition: color 0.2s ease;
+        }
+
+        .data-table th.sort-asc::after {
+            content: '↑';
+            color: #667eea;
+        }
+
+        .data-table th.sort-desc::after {
+            content: '↓';
+            color: #667eea;
+        }
+
+        .data-table th.sortable:hover::after {
+            color: #667eea;
         }
 
         .data-table tr:hover {
@@ -572,6 +603,58 @@
         .auth-cancel-btn:active {
             transform: translateY(0);
         }
+
+        /* 表头分组样式 */
+        .data-table th.header-group {
+            background: #f8f9fa;
+            color: #555;
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-align: center;
+            border-bottom: 2px solid #dee2e6;
+            position: relative;
+            padding: 12px 8px;
+        }
+
+        .data-table th.header-group::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+        }
+
+        .data-table th[colspan] {
+            text-align: center;
+        }
+
+        .data-table th[rowspan] {
+            vertical-align: middle;
+        }
+
+        .data-table td {
+            padding: 12px 8px;
+            text-align: center;
+            border-bottom: 1px solid #ddd;
+            vertical-align: middle;
+        }
+
+        .data-table td:first-child {
+            text-align: left;
+        }
+
+        .data-table td:nth-child(2) {
+            text-align: center;
+        }
+
+        /* 添加列分割线 */
+        .data-table th:nth-child(5),
+        .data-table th:nth-child(8),
+        .data-table td:nth-child(5),
+        .data-table td:nth-child(8) {
+            border-right: 1px solid #dee2e6;
+        }
     </style>
 </head>
 <body>
@@ -630,12 +713,19 @@
                 <table class="data-table" id="dataTable">
                     <thead>
                         <tr>
-                            <th>TITLE</th>
-                            <th>TYPE</th>
-                            <th>UV(TODAY)</th>
-                            <th>PV(TODAY)</th>
-                            <th>LIKE_COUNT(TODAY)</th>
-                            <th>TIMESTAMP</th>
+                            <th rowspan="2">TITLE</th>
+                            <th rowspan="2">TYPE</th>
+                            <th colspan="3" class="header-group">TOTAL</th>
+                            <th colspan="3" class="header-group">TODAY</th>
+                            <th rowspan="2" class="sortable" data-sort="timestamp">TIMESTAMP</th>
+                        </tr>
+                        <tr>
+                            <th class="sortable" data-sort="uv">UV</th>
+                            <th class="sortable" data-sort="pv">PV</th>
+                            <th class="sortable" data-sort="like_count">LIKE</th>
+                            <th class="sortable" data-sort="uv_today">UV</th>
+                            <th class="sortable" data-sort="pv_today">PV</th>
+                            <th class="sortable" data-sort="like_count_today">LIKE</th>
                         </tr>
                     </thead>
                     <tbody id="tableBody"></tbody>
@@ -650,6 +740,9 @@
         let chartInstances = [];
         let isAuthorized = false;
         let jwtToken = null;
+        let currentStatistics = []; // 存储当前统计数据
+        let currentSortField = null; // 当前排序字段
+        let currentSortDirection = 'asc'; // 当前排序方向
 
         // 页面加载时检查授权状态
         document.addEventListener('DOMContentLoaded', function() {
@@ -681,6 +774,14 @@
                 if (!isAuthorized) {
                     e.preventDefault();
                     showAuthModal();
+                }
+            });
+
+            // 添加表格排序事件监听器
+            document.addEventListener('click', function(e) {
+                if (e.target.matches('.data-table th.sortable')) {
+                    const sortField = e.target.getAttribute('data-sort');
+                    handleTableSort(sortField);
                 }
             });
         });
@@ -1014,6 +1115,13 @@
             const resultsSection = document.getElementById('resultsSection');
             resultsSection.style.display = 'block';
             
+            // 保存统计数据
+            currentStatistics = [...statistics];
+            
+            // 重置排序状态
+            currentSortField = null;
+            currentSortDirection = 'asc';
+            
             // 销毁现有图表
             chartInstances.forEach(chart => {
                 if (chart && chart.destroy) {
@@ -1036,6 +1144,9 @@
             
             // 更新数据表格
             updateDataTable(statistics);
+            
+            // 重置表头排序状态
+            resetTableSortState();
         }
 
         function updateStatsGrid(totalDocs, totalUV, totalPV, totalLike, totalUVToday, totalPVToday, totalLikeToday) {
@@ -1044,7 +1155,7 @@
                 <div class="stat-card"><h3>${totalDocs}</h3><p>count</p></div>
                 <div class="stat-card"><h3>${totalUV}(${totalUVToday})</h3><p>uv(today)</p></div>
                 <div class="stat-card"><h3>${totalPV}(${totalPVToday})</h3><p>pv(today)</p></div>
-                <div class="stat-card"><h3>${totalLike}(${totalLikeToday})</h3><p>like_count(today)</p></div>
+                <div class="stat-card"><h3>${totalLike}(${totalLikeToday})</h3><p>like(today)</p></div>
             `;
         }
 
@@ -1058,9 +1169,12 @@
                 row.innerHTML = `
                     <td><a href="${doc.source_url}" target="_blank" style="color: #667eea; text-decoration: none; font-weight: 500;">${doc.title}</a></td>
                     <td>${doc.type}</td>
-                    <td>${doc.uv}(${doc.uv_today})</td>
-                    <td>${doc.pv}(${doc.pv_today})</td>
-                    <td>${doc.like_count}(${doc.like_count_today})</td>
+                    <td>${doc.uv || 0}</td>
+                    <td>${doc.pv || 0}</td>
+                    <td>${doc.like_count || 0}</td>
+                    <td>${doc.uv_today || 0}</td>
+                    <td>${doc.pv_today || 0}</td>
+                    <td>${doc.like_count_today || 0}</td>
                     <td>${timestamp}</td>
                 `;
                 tableBody.appendChild(row);
@@ -1113,6 +1227,75 @@
         function goToAuth() {
             closeAuthModal();
             window.location.href = '/auth';
+        }
+
+        // 处理表格排序
+        function handleTableSort(sortField) {
+            if (currentStatistics.length === 0) return;
+            
+            // 如果点击的是当前排序字段，切换排序方向
+            if (currentSortField === sortField) {
+                currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                // 如果是新的排序字段，设置为升序
+                currentSortField = sortField;
+                currentSortDirection = 'asc';
+            }
+            
+            // 更新表头排序状态
+            updateTableSortState();
+            
+            // 排序数据
+            const sortedData = sortStatistics(currentStatistics, sortField, currentSortDirection);
+            
+            // 更新表格显示
+            updateDataTable(sortedData);
+        }
+
+        // 排序统计数据
+        function sortStatistics(data, field, direction) {
+            return [...data].sort((a, b) => {
+                let aValue = a[field];
+                let bValue = b[field];
+                
+                // 处理时间戳排序
+                if (field === 'timestamp') {
+                    aValue = aValue || 0;
+                    bValue = bValue || 0;
+                } else {
+                    // 处理数字排序（包括新增的历史数据字段）
+                    aValue = parseInt(aValue) || 0;
+                    bValue = parseInt(bValue) || 0;
+                }
+                
+                if (direction === 'asc') {
+                    return aValue - bValue;
+                } else {
+                    return bValue - aValue;
+                }
+            });
+        }
+
+        // 更新表头排序状态
+        function updateTableSortState() {
+            const sortableHeaders = document.querySelectorAll('.data-table th.sortable');
+            
+            sortableHeaders.forEach(header => {
+                const field = header.getAttribute('data-sort');
+                header.classList.remove('sort-asc', 'sort-desc');
+                
+                if (field === currentSortField) {
+                    header.classList.add(currentSortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+                }
+            });
+        }
+
+        // 重置表头排序状态
+        function resetTableSortState() {
+            const sortableHeaders = document.querySelectorAll('.data-table th.sortable');
+            sortableHeaders.forEach(header => {
+                header.classList.remove('sort-asc', 'sort-desc');
+            });
         }
     </script>
 </body>
