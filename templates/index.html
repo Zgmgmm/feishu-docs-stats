@@ -24,6 +24,7 @@
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
+            position: relative;
         }
 
         .header {
@@ -44,48 +45,68 @@
         }
 
         .auth-section {
-            background: white;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
+            padding: 12px 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            min-width: 280px;
+            z-index: 100;
+            transition: all 0.3s ease;
+        }
+
+        .auth-section:hover {
+            background: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+            transform: translateY(-2px);
         }
 
         .auth-status {
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: center;
         }
 
         .auth-info {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
         }
 
         .auth-icon {
-            font-size: 1.5rem;
+            font-size: 1.1rem;
         }
 
         .auth-text {
-            font-size: 1.1rem;
+            font-size: 0.95rem;
             font-weight: 600;
-        }
-
-        .auth-status.authorized .auth-icon {
-            color: #28a745;
-        }
-
-        .auth-status.authorized .auth-text {
-            color: #28a745;
+            color: rgba(255, 255, 255, 0.9);
         }
 
         .auth-btn {
-            background: linear-gradient(135deg, #00d4aa 0%, #0099cc 100%);
+            background: none !important;
+            border: none !important;
+            padding: 0 !important;
+            font-size: 18px !important;
+            color: rgba(255, 255, 255, 0.95) !important;
+            font-weight: 600 !important;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            margin-right: 0 !important;
+            border-radius: 0 !important;
         }
 
         .auth-btn:hover {
-            background: linear-gradient(135deg, #00b894 0%, #0088aa 100%);
+            color: rgba(255, 255, 255, 1) !important;
+            transform: translateY(-1px);
+            text-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            background: none !important;
         }
 
         /* 用户信息区域样式 */
@@ -93,17 +114,14 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #e1e5e9;
         }
 
         .user-avatar {
-            width: 50px;
-            height: 50px;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
             overflow: hidden;
-            border: 3px solid #667eea;
+            border: 2px solid rgba(255, 255, 255, 0.3);
             flex-shrink: 0;
         }
 
@@ -115,29 +133,30 @@
 
         .user-details {
             flex: 1;
-            margin-left: 15px;
+            margin-left: 12px;
         }
 
         .user-name {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 2px;
-        }
-
-        .user-email {
             font-size: 0.9rem;
-            color: #666;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.9);
         }
 
         .logout-btn {
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-            padding: 8px 20px;
-            font-size: 14px;
+            background: linear-gradient(135deg, rgba(220, 53, 69, 0.8) 0%, rgba(200, 35, 51, 0.8) 100%);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 6px 12px;
+            font-size: 12px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 500;
         }
 
         .logout-btn:hover {
-            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
+            background: linear-gradient(135deg, rgba(200, 35, 51, 0.9) 0%, rgba(167, 30, 42, 0.9) 100%);
+            transform: translateY(-1px);
         }
 
         .input-section {
@@ -354,6 +373,174 @@
             .stats-grid {
                 grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             }
+            
+            .auth-section {
+                position: relative;
+                top: auto;
+                right: auto;
+                margin-bottom: 20px;
+                min-width: auto;
+            }
+            
+            .container {
+                padding-top: 60px;
+            }
+        }
+
+        /* 授权弹窗样式 */
+        .auth-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            animation: modalFadeIn 0.2s ease;
+        }
+
+        .auth-modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 35px;
+            max-width: 420px;
+            width: 90%;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.25);
+            animation: modalSlideIn 0.25s ease;
+            transform-origin: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .auth-modal-content::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px 20px 0 0;
+        }
+
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes modalSlideOut {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+        }
+
+        @keyframes modalFadeOut {
+            from {
+                opacity: 1;
+            }
+            to {
+                opacity: 0;
+            }
+        }
+
+        .auth-modal-header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .auth-modal-header h3 {
+            color: #333;
+            font-size: 1.6rem;
+            margin: 0;
+            font-weight: 700;
+        }
+
+        .auth-modal-body {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .auth-modal-body p {
+            color: #666;
+            font-size: 1.05rem;
+            margin: 0;
+            line-height: 1.6;
+        }
+
+        .auth-modal-footer {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        .auth-confirm-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .auth-confirm-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .auth-confirm-btn:active {
+            transform: translateY(0);
+        }
+
+        .auth-cancel-btn {
+            background: #f8f9fa;
+            color: #6c757d;
+            border: 2px solid #e9ecef;
+            padding: 12px 26px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .auth-cancel-btn:hover {
+            background: #e9ecef;
+            color: #495057;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(108, 117, 125, 0.2);
+        }
+
+        .auth-cancel-btn:active {
+            transform: translateY(0);
         }
     </style>
 </head>
@@ -366,12 +553,10 @@
 
         <!-- 授权状态区域 -->
         <div class="auth-section" id="authSection">
+            <!-- 未授权状态 -->
             <div class="auth-status" id="authStatus">
-                <div class="auth-info">
-                    <span class="auth-icon">🔒</span>
-                    <span class="auth-text">未授权</span>
-                </div>
-                <button class="btn auth-btn" onclick="requestAuth()" id="authBtn">飞书授权</button>
+                <button class="btn auth-btn" onclick="requestAuth()" id="authBtn">点击授权</button>
+                <!-- 点击授权 -->
             </div>
             
             <!-- 用户信息区域 -->
@@ -381,9 +566,8 @@
                 </div>
                 <div class="user-details">
                     <div class="user-name" id="userName">用户名称</div>
-                    <div class="user-email" id="userEmail">用户邮箱</div>
                 </div>
-                <button class="btn logout-btn" onclick="logoutAuth()">退出登录</button>
+                <button class="btn logout-btn" onclick="logoutAuth()">退出</button>
             </div>
         </div>
 
@@ -473,6 +657,22 @@
             jwtToken = sessionStorage.getItem('jwt_token');
             
             checkAuthStatus();
+            
+            // 绑定事件监听器
+            // 回车键添加链接
+            document.getElementById('urlInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    addUrl();
+                }
+            });
+
+            // 点击输入框时检查授权状态
+            document.getElementById('urlInput').addEventListener('click', function(e) {
+                if (!isAuthorized) {
+                    e.preventDefault();
+                    showAuthModal();
+                }
+            });
         });
 
         // 检查授权状态
@@ -509,28 +709,21 @@
 
         // 更新授权UI
         function updateAuthUI() {
+            const authSection = document.getElementById('authSection');
             const authStatus = document.getElementById('authStatus');
             const userInfo = document.getElementById('userInfo');
-            const authIcon = authStatus.querySelector('.auth-icon');
-            const authText = authStatus.querySelector('.auth-text');
             const authBtn = document.getElementById('authBtn');
             const analyzeBtn = document.getElementById('analyzeBtn');
 
             if (isAuthorized) {
-                authStatus.classList.add('authorized');
-                authIcon.textContent = '✅';
-                authText.textContent = '已授权';
-                authBtn.style.display = 'none'; // 隐藏授权按钮
-                userInfo.style.display = 'flex'; // 显示用户信息
+                // 已授权时显示用户信息
+                authSection.style.display = 'block';
+                authStatus.style.display = 'none';
+                userInfo.style.display = 'flex';
                 analyzeBtn.disabled = false;
             } else {
-                authStatus.classList.remove('authorized');
-                authIcon.textContent = '🔒';
-                authText.textContent = '未授权';
-                authBtn.style.display = 'block'; // 显示授权按钮
-                userInfo.style.display = 'none'; // 隐藏用户信息
-                authBtn.textContent = '飞书授权';
-                authBtn.onclick = requestAuth;
+                // 未授权时隐藏整个授权区域
+                authSection.style.display = 'none';
                 analyzeBtn.disabled = true;
             }
         }
@@ -560,7 +753,6 @@
         function displayUserInfo(userInfo) {
             const userAvatar = document.getElementById('userAvatar');
             const userName = document.getElementById('userName');
-            const userEmail = document.getElementById('userEmail');
             
             // 设置用户头像
             if (userInfo.avatar_url) {
@@ -569,14 +761,6 @@
             
             // 设置用户名称
             userName.textContent = userInfo.name || '未知用户';
-            
-            // 设置用户邮箱
-            if (userInfo.email) {
-                userEmail.textContent = userInfo.email;
-                userEmail.style.display = 'block';
-            } else {
-                userEmail.style.display = 'none';
-            }
         }
 
         // 请求授权
@@ -600,11 +784,9 @@
                 // 清除用户信息显示
                 const userAvatar = document.getElementById('userAvatar');
                 const userName = document.getElementById('userName');
-                const userEmail = document.getElementById('userEmail');
                 
                 userAvatar.src = '';
                 userName.textContent = '用户名称';
-                userEmail.textContent = '用户邮箱';
                 
                 showMessage('已退出授权', 'success');
             } catch (error) {
@@ -614,6 +796,11 @@
         }
 
         function addUrl() {
+            if (!isAuthorized) {
+                showAuthModal();
+                return;
+            }
+
             const input = document.getElementById('urlInput');
             const url = input.value.trim();
             
@@ -684,7 +871,7 @@
 
         async function analyzeData() {
             if (!isAuthorized) {
-                showMessage('请先进行飞书授权', 'error');
+                showAuthModal();
                 return;
             }
 
@@ -934,12 +1121,53 @@
             });
         }
 
-        // 回车键添加链接
-        document.getElementById('urlInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                addUrl();
+        // 显示授权提示弹窗
+        function showAuthModal() {
+            const modal = document.createElement('div');
+            modal.className = 'auth-modal';
+            modal.innerHTML = `
+                <div class="auth-modal-content">
+                    <div class="auth-modal-header">
+                        <h3>需要授权</h3>
+                    </div>
+                    <div class="auth-modal-body">
+                        <p>请先进行飞书授权以使用此功能</p>
+                    </div>
+                    <div class="auth-modal-footer">
+                        <button class="btn auth-confirm-btn" onclick="goToAuth()">去授权</button>
+                        <button class="btn auth-cancel-btn" onclick="closeAuthModal()">取消</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            // 添加点击背景关闭功能
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    closeAuthModal();
+                }
+            });
+        }
+
+        // 关闭授权弹窗
+        function closeAuthModal() {
+            const modal = document.querySelector('.auth-modal');
+            if (modal) {
+                const content = modal.querySelector('.auth-modal-content');
+                content.style.animation = 'modalSlideOut 0.2s ease forwards';
+                modal.style.animation = 'modalFadeOut 0.2s ease forwards';
+                
+                setTimeout(() => {
+                    modal.remove();
+                }, 200);
             }
-        });
+        }
+
+        // 跳转到授权页面
+        function goToAuth() {
+            closeAuthModal();
+            window.location.href = '/auth';
+        }
     </script>
 </body>
 </html> 
