@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Feishu-Doc-Stats</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -304,26 +302,6 @@
             font-size: 0.9rem;
         }
 
-        .chart-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin-bottom: 30px;
-        }
-
-        .chart-card {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
-            height: 400px;
-        }
-
-        .chart-card h3 {
-            margin-bottom: 15px;
-            color: #555;
-            text-align: center;
-        }
-
         .data-table {
             width: 100%;
             border-collapse: collapse;
@@ -366,10 +344,6 @@
         }
 
         @media (max-width: 768px) {
-            .chart-container {
-                grid-template-columns: 1fr;
-            }
-            
             .stats-grid {
                 grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             }
@@ -595,28 +569,6 @@
             
             <div class="stats-grid" id="statsGrid"></div>
             
-            <div class="chart-container">
-                <div class="chart-card">
-                    <h3>访问量对比</h3>
-                    <canvas id="pvChart"></canvas>
-                </div>
-                <div class="chart-card">
-                    <h3>用户活跃度</h3>
-                    <div id="uvChart" style="width: 100%; height: 300px;"></div>
-                </div>
-            </div>
-            
-            <div class="chart-container">
-                <div class="chart-card">
-                    <h3>互动数据</h3>
-                    <canvas id="interactionChart"></canvas>
-                </div>
-                <div class="chart-card">
-                    <h3>文档类型分布</h3>
-                    <canvas id="typeChart"></canvas>
-                </div>
-            </div>
-
             <h3>📋 详细数据</h3>
             <table class="data-table" id="dataTable">
                 <thead>
@@ -955,12 +907,6 @@
             // 更新统计卡片
             updateStatsGrid(totalDocs, totalUV, totalPV, totalLikes);
             
-            // 创建图表
-            createPVChart(statistics);
-            createUVChart(statistics);
-            createInteractionChart(statistics);
-            createTypeChart(statistics);
-            
             // 更新数据表格
             updateDataTable(statistics);
         }
@@ -985,121 +931,6 @@
                     <p>总点赞数</p>
                 </div>
             `;
-        }
-
-        function createPVChart(statistics) {
-            const ctx = document.getElementById('pvChart').getContext('2d');
-            const chart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: statistics.slice(0, 10).map(doc => doc.title.substring(0, 20) + '...'),
-                    datasets: [{
-                        label: '页面访问量',
-                        data: statistics.slice(0, 10).map(doc => doc.pv),
-                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
-                        borderColor: 'rgba(102, 126, 234, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
-            chartInstances.push(chart);
-        }
-
-        function createUVChart(statistics) {
-            const chart = echarts.init(document.getElementById('uvChart'));
-            const option = {
-                tooltip: {
-                    trigger: 'item'
-                },
-                series: [{
-                    type: 'pie',
-                    radius: '70%',
-                    data: statistics.slice(0, 8).map(doc => ({
-                        name: doc.title.substring(0, 15) + '...',
-                        value: doc.uv
-                    })),
-                    emphasis: {
-                        itemStyle: {
-                            shadowBlur: 10,
-                            shadowOffsetX: 0,
-                            shadowColor: 'rgba(0, 0, 0, 0.5)'
-                        }
-                    }
-                }]
-            };
-            chart.setOption(option);
-            chartInstances.push(chart);
-        }
-
-        function createInteractionChart(statistics) {
-            const ctx = document.getElementById('interactionChart').getContext('2d');
-            const chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: statistics.slice(0, 10).map(doc => doc.title.substring(0, 15) + '...'),
-                    datasets: [{
-                        label: '点赞数',
-                        data: statistics.slice(0, 10).map(doc => doc.like_count),
-                        borderColor: 'rgba(255, 99, 132, 1)',
-                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                        tension: 0.1
-                    }, {
-                        label: '评论数',
-                        data: statistics.slice(0, 10).map(doc => doc.comment_count),
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                        tension: 0.1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
-            chartInstances.push(chart);
-        }
-
-        function createTypeChart(statistics) {
-            const typeCount = {};
-            statistics.forEach(doc => {
-                typeCount[doc.type] = (typeCount[doc.type] || 0) + 1;
-            });
-            
-            const ctx = document.getElementById('typeChart').getContext('2d');
-            const chart = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: Object.keys(typeCount),
-                    datasets: [{
-                        data: Object.values(typeCount),
-                        backgroundColor: [
-                            'rgba(255, 99, 132, 0.8)',
-                            'rgba(54, 162, 235, 0.8)',
-                            'rgba(255, 205, 86, 0.8)',
-                            'rgba(75, 192, 192, 0.8)'
-                        ]
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
-            });
-            chartInstances.push(chart);
         }
 
         function updateDataTable(statistics) {
