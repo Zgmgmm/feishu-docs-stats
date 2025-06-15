@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .success { border-color: #28a745; background: #d4edda; }
+        .error { border-color: #dc3545; background: #f8d7da; }
+        .btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .btn:hover { background: #0056b3; }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 系统测试页面</h1>
+        <p>此页面用于测试文档统计分析系统的基本功能。</p>
+
+        <div class="test-section">
+            <h3>📡 API连接测试</h3>
+            <button class="btn" onclick="testAPI()">测试API连接</button>
+            <div id="apiResult" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📊 数据可视化测试</h3>
+            <button class="btn" onclick="testCharts()">测试图表渲染</button>
+            <div id="chartResult" class="result"></div>
+            <canvas id="testChart" width="400" height="200" style="border: 1px solid #ddd; margin-top: 10px;"></canvas>
+        </div>
+
+        <div class="test-section">
+            <h3>🔗 链接解析测试</h3>
+            <input type="text" id="testUrl" placeholder="输入飞书文档链接进行测试" style="width: 100%; padding: 10px; margin-bottom: 10px;">
+            <button class="btn" onclick="testUrlParsing()">测试链接解析</button>
+            <div id="urlResult" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📋 系统信息</h3>
+            <div id="systemInfo" class="result"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // 显示系统信息
+        function showSystemInfo() {
+            const info = {
+                userAgent: navigator.userAgent,
+                language: navigator.language,
+                cookieEnabled: navigator.cookieEnabled,
+                onLine: navigator.onLine,
+                screenResolution: `${screen.width}x${screen.height}`,
+                windowSize: `${window.innerWidth}x${window.innerHeight}`,
+                timestamp: new Date().toLocaleString()
+            };
+            
+            document.getElementById('systemInfo').textContent = 
+                `系统信息:\n${JSON.stringify(info, null, 2)}`;
+        }
+
+        // 测试API连接
+        async function testAPI() {
+            const resultDiv = document.getElementById('apiResult');
+            resultDiv.textContent = '正在测试API连接...';
+            
+            try {
+                const response = await fetch('/stats', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        urls: ['https://bytedance.larkoffice.com/wiki/test'] 
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.textContent = `✅ API连接成功\n响应状态: ${response.status}\n响应数据: ${JSON.stringify(data, null, 2)}`;
+                    resultDiv.parentElement.className = 'test-section success';
+                } else {
+                    resultDiv.textContent = `❌ API连接失败\n状态码: ${response.status}\n状态文本: ${response.statusText}`;
+                    resultDiv.parentElement.className = 'test-section error';
+                }
+            } catch (error) {
+                resultDiv.textContent = `❌ 连接错误: ${error.message}`;
+                resultDiv.parentElement.className = 'test-section error';
+            }
+        }
+
+        // 测试图表渲染
+        function testCharts() {
+            const resultDiv = document.getElementById('chartResult');
+            const canvas = document.getElementById('testChart');
+            
+            try {
+                const ctx = canvas.getContext('2d');
+                const chart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['测试1', '测试2', '测试3'],
+                        datasets: [{
+                            label: '测试数据',
+                            data: [12, 19, 3],
+                            backgroundColor: ['rgba(255, 99, 132, 0.8)', 'rgba(54, 162, 235, 0.8)', 'rgba(255, 205, 86, 0.8)']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+                
+                resultDiv.textContent = '✅ 图表渲染成功\nChart.js 库加载正常';
+                resultDiv.parentElement.className = 'test-section success';
+            } catch (error) {
+                resultDiv.textContent = `❌ 图表渲染失败: ${error.message}`;
+                resultDiv.parentElement.className = 'test-section error';
+            }
+        }
+
+        // 测试链接解析
+        function testUrlParsing() {
+            const url = document.getElementById('testUrl').value.trim();
+            const resultDiv = document.getElementById('urlResult');
+            
+            if (!url) {
+                resultDiv.textContent = '❌ 请输入链接进行测试';
+                resultDiv.parentElement.className = 'test-section error';
+                return;
+            }
+            
+            try {
+                const urlObj = new URL(url);
+                const isValidLark = urlObj.hostname.includes('larkoffice.com');
+                const pathParts = urlObj.pathname.split('/').filter(p => p);
+                
+                const result = {
+                    isValidUrl: true,
+                    isLarkOffice: isValidLark,
+                    hostname: urlObj.hostname,
+                    pathParts: pathParts,
+                    fileType: pathParts.length > 0 ? pathParts[0] : 'unknown',
+                    fileToken: pathParts.length > 1 ? pathParts[1] : 'none'
+                };
+                
+                if (isValidLark) {
+                    resultDiv.textContent = `✅ 链接解析成功\n${JSON.stringify(result, null, 2)}`;
+                    resultDiv.parentElement.className = 'test-section success';
+                } else {
+                    resultDiv.textContent = `⚠️ 链接格式正确，但不是飞书文档\n${JSON.stringify(result, null, 2)}`;
+                    resultDiv.parentElement.className = 'test-section';
+                }
+            } catch (error) {
+                resultDiv.textContent = `❌ 链接格式错误: ${error.message}`;
+                resultDiv.parentElement.className = 'test-section error';
+            }
+        }
+
+        // 页面加载时显示系统信息
+        window.onload = showSystemInfo;
+    </script>
+</body>
+</html> 

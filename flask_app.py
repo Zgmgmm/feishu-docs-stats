@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Any, Union
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 
 load_dotenv() # 加载 .env 文件中的环境变量
 
@@ -717,6 +717,16 @@ def get_document_statistics(urls: List[str]) -> Tuple[List[Dict[str, Any]], List
     all_doc_stats.sort(key=lambda x: x.get("uv", 0), reverse=True)
 
     return all_doc_stats, processed_wikis_data
+
+@app.route('/')
+def index():
+    """主页面"""
+    return render_template('index.html')
+
+@app.route('/test')
+def test():
+    """测试页面"""
+    return render_template('test.html')
 
 @app.route('/stats', methods=['POST','GET'])
 def handle_stats_request():
