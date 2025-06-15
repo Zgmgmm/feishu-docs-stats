@@ -270,41 +270,51 @@
 
         /* 性能指标样式 */
         .performance-metrics {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            background: linear-gradient(135deg, #28a745 0%, #20c997 50%, #17a2b8 100%);
             color: white;
-            padding: 15px 20px;
+            padding: 8px 16px;
             border-radius: 10px;
-            margin-bottom: 20px;
             box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+            min-width: 400px;
+            max-width: 450px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .performance-metrics h4 {
-            margin: 0 0 10px 0;
-            font-size: 16px;
+            margin: 0;
+            font-size: 14px;
             font-weight: 600;
+            white-space: nowrap;
         }
 
         .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
+            display: flex;
+            gap: 30px;
+            align-items: center;
+            justify-content: center;
         }
 
         .metric-item {
             text-align: center;
+            white-space: nowrap;
         }
 
         .metric-value {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 700;
             margin-bottom: 2px;
+            display: block;
         }
 
         .metric-label {
-            font-size: 12px;
+            font-size: 11px;
             opacity: 0.9;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            display: block;
         }
 
         .loading {
@@ -337,13 +347,24 @@
             box-shadow: 0 10px 30px rgba(0,0,0,0.1);
         }
 
-        .results-section h2 {
-            margin-bottom: 16px;
+        .results-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .results-header h2 {
+            margin: 0;
+            font-size: 1.8rem;
+            font-weight: 700;
             color: #333;
         }
 
-        .results-section h3 {
-            color: #555;
+        .results-header .performance-metrics {
+            display: none;
         }
 
         .stats-grid {
@@ -469,21 +490,48 @@
             border-left: 4px solid #28a745;
         }
 
+        /* 响应式设计 */
         @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
+            .results-header {
+                flex-direction: column;
+                align-items: flex-start;
             }
             
-            .auth-section {
-                position: relative;
-                top: auto;
-                right: auto;
-                margin-bottom: 20px;
-                min-width: auto;
+            .results-header h2 {
+                font-size: 1.5rem;
             }
             
-            .container {
-                padding-top: 60px;
+            .performance-metrics {
+                min-width: 100%;
+                max-width: none;
+                margin-top: 10px;
+                flex-direction: column;
+                gap: 10px;
+                padding: 12px 16px;
+            }
+            
+            .metrics-grid {
+                flex-wrap: wrap;
+                gap: 20px;
+                justify-content: center;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .performance-metrics {
+                padding: 10px 12px;
+            }
+            
+            .metrics-grid {
+                gap: 15px;
+            }
+            
+            .metric-value {
+                font-size: 14px;
+            }
+            
+            .metric-label {
+                font-size: 10px;
             }
         }
 
@@ -743,12 +791,14 @@
         </div>
 
         <div class="results-section" id="resultsSection">
-            <h2>📈 分析结果</h2>
-            
-            <!-- 新增：性能指标显示 -->
-            <div class="performance-metrics" id="performanceMetrics" style="display: none;">
-                <h4>🚀 性能指标</h4>
-                <div class="metrics-grid" id="metricsGrid"></div>
+            <div class="results-header">
+                <h2>📈 分析结果</h2>
+                
+                <!-- 性能指标显示 -->
+                <div class="performance-metrics" id="performanceMetrics" style="display: none;">
+                    <!-- <h4>🚀 性能指标</h4> -->
+                    <div class="metrics-grid" id="metricsGrid"></div>
+                </div>
             </div>
             
             <div class="stats-grid" id="statsGrid"></div>
@@ -1201,7 +1251,6 @@
         function updateStatsGrid(totalDocs, totalUV, totalPV, totalLike, totalUVToday, totalPVToday, totalLikeToday) {
             const statsGrid = document.getElementById('statsGrid');
             statsGrid.innerHTML = `
-                <div class="stat-card"><h3>${totalDocs}</h3><p>count</p></div>
                 <div class="stat-card"><h3>${totalUV}(${totalUVToday})</h3><p>uv(today)</p></div>
                 <div class="stat-card"><h3>${totalPV}(${totalPVToday})</h3><p>pv(today)</p></div>
                 <div class="stat-card"><h3>${totalLike}(${totalLikeToday})</h3><p>like(today)</p></div>
@@ -1381,7 +1430,7 @@
             metricsGrid.innerHTML = `
                 <div class="metric-item">
                     <span class="metric-value">${performance.processing_time_seconds || 'N/A'}</span>
-                    <span class="metric-label">处理时间(秒)</span>
+                    <span class="metric-label">处理时间</span>
                 </div>
                 <div class="metric-item">
                     <span class="metric-value">${performance.docs_per_second || 'N/A'}</span>
