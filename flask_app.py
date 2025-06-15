@@ -8,6 +8,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Any, Union
 from dotenv import load_dotenv
+from flask import Flask, request, jsonify
 
 load_dotenv() # 加载 .env 文件中的环境变量
 
@@ -654,63 +655,159 @@ def validate_config() -> bool:
     return True
 
 
-def main() -> None:
-    """主函数"""
-    logger.info("开始处理文档统计...")
-    
-    # 验证配置
-    if not validate_config():
-        return
-    
-    # 初始化结果列表
-    all_doc_stats = []
-    processed_wikis = []
+# --- HTTP 接口相关代码 ---
+app = Flask(__name__)
 
-    # 处理每个输入URL
-    for url in config.input_urls:
-        logger.info(f"\n处理URL: {url}")
-        file_type, file_token = parse_lark_url(url)
+def get_document_statistics(urls: List[str]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """获取文档统计信息并构建Wiki树（如果适用）
+
+    Args:
+        urls: 要处理的文档URL列表
+
+    Returns:
+        包含所有文档统计信息和处理过的Wiki信息的元组
+    """
+    logger.info("开始处理文档统计...")
+
+    # 验证配置
+    if not validate_config(): # 假设 validate_config 不需要修改，或者根据需要调整
+        return [], []
+
+    all_doc_stats = []
+    processed_wikis_data = [] # 用于存储可序列化的wiki信息
+
+    for url_item in urls:
+        logger.info(f"\n处理URL: {url_item}")
+        file_type, file_token = parse_lark_url(url_item)
 
         if not file_type or not file_token:
-            logger.error(f"无法解析URL: {url}")
+            logger.error(f"无法解析URL: {url_item}")
             continue
 
         logger.info(f"解析结果: file_type='{file_type}', file_token='{file_token}'")
 
         if file_type == 'wiki':
-            # 获取知识空间ID
             space_id = get_node_space_id(file_token)
             if not space_id:
                 logger.error(f"无法获取知识空间ID: {file_token}")
                 continue
-                
-            # 处理Wiki根节点
-            doc_stats, wiki_info = process_wiki_node(file_token, space_id, url)
+
+            doc_stats, wiki_info_obj = process_wiki_node(file_token, space_id, url_item)
             if doc_stats:
                 all_doc_stats.append(doc_stats)
-            if wiki_info:
-                processed_wikis.append(wiki_info)
-            
-            # 处理Wiki子节点
-            child_stats_list = process_wiki_children(space_id, file_token, url)
+            if wiki_info_obj:
+                # 将WikiInfo对象转换为字典以便序列化
+                processed_wikis_data.append({
+                    "token": wiki_info_obj.token,
+                    "space_id": wiki_info_obj.space_id,
+                    "url": wiki_info_obj.url
+                })
+
+            child_stats_list = process_wiki_children(space_id, file_token, url_item)
             all_doc_stats.extend(child_stats_list)
-        
-        elif file_type == 'docx': # 只支持 docx
-            # 处理docx文档
-            doc_stats = process_docx(file_token, file_type, url)
+
+        elif file_type == 'docx':
+            doc_stats = process_docx(file_token, file_type, url_item)
             if doc_stats:
                 all_doc_stats.append(doc_stats)
         else:
-            logger.warning(f"警告：文件类型 '{file_type}' (来自URL: {url}) 不是 'wiki' 或 'docx'，跳过处理。")
+            logger.warning(f"警告：文件类型 '{file_type}' (来自URL: {url_item}) 不是 'wiki' 或 'docx'，跳过处理。")
 
-    # 保存统计结果
-    save_doc_stats(all_doc_stats, "wiki_stats_output.json")
-    
-    # 生成Wiki树结构
-    generate_wiki_trees(processed_wikis)
-    
-    logger.info("\n处理完成!")
+    # 对统计结果进行排序
+    all_doc_stats.sort(key=lambda x: x.get("uv", 0), reverse=True)
+
+    return all_doc_stats, processed_wikis_data
+
+@app.route('/stats', methods=['POST','GET'])
+def handle_stats_request():
+    data = request.get_json()
+    if not data or 'urls' not in data:
+        return jsonify({"error": "Missing 'urls' in request body"}), 400
+
+    input_urls = data['urls']
+    if not isinstance(input_urls, list):
+        return jsonify({"error": "'urls' must be a list"}), 400
+
+    # 更新全局配置中的 input_urls，如果需要的话，或者直接传递给处理函数
+    # config.input_urls = input_urls # 如果后续函数依赖全局config
+
+    doc_stats, processed_wikis = get_document_statistics(input_urls)
+
+    # 此处不再自动生成或保存文件，仅返回统计数据
+    # 如果需要生成树并返回，可以在 get_document_statistics 中调整或在此处调用
+    # wiki_trees_data = []
+    # for wiki_data in processed_wikis:
+    #     tree = build_wiki_tree(wiki_data['space_id'], wiki_data['token'])
+    #     if tree:
+    #         wiki_trees_data.append(tree.to_dict())
+
+    response_data = {
+        "statistics": doc_stats,
+        "processed_wikis": processed_wikis # 返回处理过的wiki基本信息
+        # "wiki_trees": wiki_trees_data # 如果需要返回树结构
+    }
+    return jsonify(response_data)
+
+
+# def main() -> None:
+#     """主函数"""
+#     logger.info("开始处理文档统计...")
+#     
+#     # 验证配置
+#     if not validate_config():
+#         return
+#     
+#     # 初始化结果列表
+#     all_doc_stats = []
+#     processed_wikis = []
+# 
+#     # 处理每个输入URL
+#     for url in config.input_urls:
+#         logger.info(f"\n处理URL: {url}")
+#         file_type, file_token = parse_lark_url(url)
+# 
+#         if not file_type or not file_token:
+#             logger.error(f"无法解析URL: {url}")
+#             continue
+# 
+#         logger.info(f"解析结果: file_type='{file_type}', file_token='{file_token}'")
+# 
+#         if file_type == 'wiki':
+#             # 获取知识空间ID
+#             space_id = get_node_space_id(file_token)
+#             if not space_id:
+#                 logger.error(f"无法获取知识空间ID: {file_token}")
+#                 continue
+#                 
+#             # 处理Wiki根节点
+#             doc_stats, wiki_info = process_wiki_node(file_token, space_id, url)
+#             if doc_stats:
+#                 all_doc_stats.append(doc_stats)
+#             if wiki_info:
+#                 processed_wikis.append(wiki_info)
+#             
+#             # 处理Wiki子节点
+#             child_stats_list = process_wiki_children(space_id, file_token, url)
+#             all_doc_stats.extend(child_stats_list)
+#         
+#         elif file_type == 'docx': # 只支持 docx
+#             # 处理docx文档
+#             doc_stats = process_docx(file_token, file_type, url)
+#             if doc_stats:
+#                 all_doc_stats.append(doc_stats)
+#         else:
+#             logger.warning(f"警告：文件类型 '{file_type}' (来自URL: {url}) 不是 'wiki' 或 'docx'，跳过处理。")
+# 
+#     # 保存统计结果
+#     save_doc_stats(all_doc_stats, "wiki_stats_output.json")
+#     
+#     # 生成Wiki树结构
+#     generate_wiki_trees(processed_wikis)
+#     
+#     logger.info("\n处理完成!")
 
 
 if __name__ == "__main__":
-    main()
+    # main() # 注释掉原来的main调用
+    logger.info("启动Flask服务器...")
+    app.run(debug=True, host='0.0.0.0', port=5000) # 运行Flask应用
