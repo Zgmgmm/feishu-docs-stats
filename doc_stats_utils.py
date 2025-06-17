@@ -146,7 +146,7 @@ class DocumentStats:
             "source_url": self.source_url,
             "uv": self.uv,
             "pv": self.pv,
-            "like_count": self.like_count,
+            "like_count": max(self.like_count,0),
             "timestamp": self.timestamp,
             "uv_today": self.uv_today,
             "pv_today": self.pv_today,
@@ -1273,13 +1273,13 @@ async def process_wiki_node_async(file_token: str, space_id: str, url: str, user
         # 获取更新时间和标题
         update_time = 0
         title = file_token  # 默认使用token作为标题
-        
+        file_type = "wiki"
         if metas and len(metas) > 0:
             meta = metas[0]
             update_time = meta.latest_modify_time
             # 使用真实标题
-            if hasattr(meta, 'title') and meta.title:
-                title = meta.title
+            title = meta.title
+            file_type = meta.doc_type
             logger.info(f"获取到Wiki节点标题: {title}")
         
         # 创建NodeInfo对象，使用真实标题
@@ -1287,7 +1287,7 @@ async def process_wiki_node_async(file_token: str, space_id: str, url: str, user
             title=title,
             node_token=file_token,
             obj_token=file_token,
-            obj_type="wiki"
+            obj_type=file_type
         )
         
         # 收集统计信息
