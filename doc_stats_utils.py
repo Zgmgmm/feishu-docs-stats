@@ -953,12 +953,7 @@ def process_wiki_children(space_id: str, parent_token: str, url: str) -> List[Di
         metas = batch_get_meta(request_docs, user_token)
         meta_dict = {}
         
-        # 修复：使用token_to_index确保正确的对应关系
-        for i, meta in enumerate(metas):
-            if i < len(request_docs):
-                token = request_docs[i].doc_token
-                meta_dict[token] = meta
-                logger.debug(f"元数据映射: token={token}, title={getattr(meta, 'title', 'N/A')}")
+        meta_dict = {meta.doc_token: meta for meta in metas}
         
         # 处理结果
         child_stats_list = []
@@ -1053,12 +1048,7 @@ async def process_wiki_children_async(space_id: str, parent_token: str, url: str
         metas = await batch_get_meta_async(request_docs, user_token)
         meta_dict = {}
         
-        # 修复：使用token_to_index确保正确的对应关系
-        for i, meta in enumerate(metas):
-            if i < len(request_docs):
-                token = request_docs[i].doc_token
-                meta_dict[token] = meta
-                logger.debug(f"元数据映射: token={token}, title={getattr(meta, 'title', 'N/A')}")
+        meta_dict = {meta.doc_token: meta for meta in metas}
         
         # 处理结果
         child_stats_list = []
