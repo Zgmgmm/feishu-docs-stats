@@ -224,8 +224,8 @@ def handle_stats_request():
         try:
             start_time = asyncio.get_event_loop().time()
             doc_stats, processed_wikis = loop.run_until_complete(
-                get_document_statistics_async(input_urls, user_token)
-                # get_document_statistics_async_v2(input_urls, user_token)
+                # get_document_statistics_async(input_urls, user_token)
+                get_document_statistics_async_v2(input_urls, user_token)
             )
             end_time = asyncio.get_event_loop().time()
             
