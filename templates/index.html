@@ -1035,17 +1035,9 @@
             
             <!-- 分页控件 -->
             <div class="pagination-container" id="paginationContainer" style="display: none;">
-                <div class="pagination-info">
-                    <span>显示第 <span id="startRecord">1</span> - <span id="endRecord">10</span> 条，共 <span id="totalRecords">0</span> 条记录</span>
-                </div>
                 <div class="pagination-controls">
-                    <div class="page-size-selector">
-                        <label for="pageSizeSelect">每页显示：</label>
-                        <select id="pageSizeSelect" onchange="changePageSize()">
-                            <option value="10">10条</option>
-                            <option value="20">20条</option>
-                            <option value="50">50条</option>
-                        </select>
+                    <div class="page-navigation">
+                        <span class="page-info">显示第 <span id="startRecord">1</span> - <span id="endRecord">10</span> 条，共 <span id="totalRecords">0</span> 条记录</span>
                     </div>
                     <div class="page-navigation">
                         <button class="pagination-btn" onclick="goToFirstPage()" id="firstPageBtn">首页</button>
@@ -1053,6 +1045,14 @@
                         <span class="page-info">第 <span id="currentPage">1</span> 页，共 <span id="totalPages">1</span> 页</span>
                         <button class="pagination-btn" onclick="goToNextPage()" id="nextPageBtn">下一页</button>
                         <button class="pagination-btn" onclick="goToLastPage()" id="lastPageBtn">末页</button>
+                    </div>
+                    <div class="page-size-selector">
+                        <label for="pageSizeSelect">每页显示：</label>
+                        <select id="pageSizeSelect" onchange="changePageSize()">
+                            <option value="10">10条</option>
+                            <option value="20">20条</option>
+                            <option value="50">50条</option>
+                        </select>
                     </div>
                 </div>
             </div>
@@ -1371,6 +1371,8 @@
                 return 'folder';
             } else if (urlLower.includes('/docs/') || urlLower.includes('/documents/')) {
                 return 'doc';
+            } else if (urlLower.includes('/docx/')) {
+                return 'docx';
             } else {
                 return 'unknown';
             }
