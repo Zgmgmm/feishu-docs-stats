@@ -25,6 +25,7 @@ typing-extensions>=4.0.0
 # 日志配置
 colorlog>=6.0.0
 
+asyncio-throttle>=1.0.2
 # 开发工具（可选）
 # pytest>=7.0.0
 # black>=22.0.0
