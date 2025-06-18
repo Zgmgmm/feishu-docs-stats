@@ -55,10 +55,19 @@ fake_tree = {
 
 from asyncio_throttle import Throttler  # 导入现成限流器
 
+def throttle(rate_limit: int, period: int):
+    """限流装饰器：限制异步函数的调用频率"""
+    def decorator(func):
+        throttler_instance = Throttler(rate_limit, period)
+        async def wrapper(*args, **kwargs):
+            async with throttler_instance:
+                return await func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 # ✅ 支持流式输出的并发 BFS（适用于树结构）
 async def walk_tree_concurrent(
-    roots: list[Node], throttler: Throttler, user_token: str
+    roots: list[Node], user_token: str
 ) -> Node:
     q_nodes = asyncio.Queue[Node]()
     q_parents = asyncio.Queue[Node]()
@@ -67,14 +76,14 @@ async def walk_tree_concurrent(
         node = await q_parents.get()
         await q_nodes.put(node)
         # API调用前进行QPS限流
-        async with throttler:
-            children = await get_children(node, user_token)  # 实际接口调用
-            for child in children:
-                if child.has_child:
-                    await q_parents.put(child)
-                    asyncio.create_task(worker())
-                else:
-                    await q_nodes.put(child)
+        # async with throttler:
+        children = await get_children(node, user_token)  # 实际接口调用
+        for child in children:
+            if child.has_child:
+                await q_parents.put(child)
+                asyncio.create_task(worker())
+            else:
+                await q_nodes.put(child)
         q_parents.task_done()
 
     async def add_parent(node: Node):
@@ -189,7 +198,7 @@ node = Node(
 
 async def get_wiki_info(tokens: List[str], user_token: str):
     roots = [await get_wiki_node(token, user_token) for token in tokens]
-    async_gen = walk_tree_concurrent(roots, throttler, user_token)
+    async_gen = walk_tree_concurrent(roots, user_token)
     res = []
     async for batch in batcher(async_gen, batch_size=200):
         docs = [
@@ -234,7 +243,7 @@ async def get_doc_info(docs: List[RequestDoc], user_token: str):
         print(f"Doc {vars(meta)}：{vars(stat)}")
     return res
 
-
+@throttle(1000, 60)
 async def get_children(parent: Node, user_token: str) -> List[Node]:
     all_nodes = []
     page_token = None
@@ -325,9 +334,6 @@ async def get_document_statistics_async_v2(
         infos += doc_infos
     print(infos)
     return infos, None
-
-
-throttler = Throttler(rate_limit=100, period=60)
 
 
 async def main():
