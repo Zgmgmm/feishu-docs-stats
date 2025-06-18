@@ -1,7 +1,6 @@
 import asyncio
 import json
-import logging
-from typing import List, Tuple, Dict, Any, Optional, Iterator
+from typing import List, Dict, Any, Optional, Iterator
 from urllib.parse import urlparse
 
 import lark_oapi as lark
@@ -74,8 +73,8 @@ def throttle(rate_limit: int, period: int):
 
 
 async def batch_get_stats_async(
-    file_tokens: List[Tuple[str, str]], user_token: str
-) -> Dict[Tuple[str, str], Any]:
+    docs: List[RequestDoc], user_token: str
+) -> Dict[RequestDoc, Any]:
     """异步批量获取文档统计信息
 
     Args:
@@ -88,23 +87,23 @@ async def batch_get_stats_async(
     semaphore = asyncio.Semaphore(100)
     results = {}
 
-    async def get_single_stats(file_token: str, file_type: str):
+    async def get_single_stats(doc: RequestDoc):
         async with semaphore:
             try:
                 # 使用同步API，但在异步环境中调用
                 loop = asyncio.get_event_loop()
                 stats = await loop.run_in_executor(
-                    None, get_file_stats, file_token, file_type, user_token
+                    None, get_file_stats, doc.doc_token, doc.doc_type, user_token
                 )
-                return (file_token, file_type), stats
+                return doc, stats
             except Exception as e:
                 logger.error(
-                    f"获取统计信息失败 (file_token: {file_token}, type: {file_type}): {e}"
+                    f"获取统计信息失败 ({doc}): {e}"
                 )
-                return (file_token, file_type), None
+                return doc, None
 
     # 创建所有任务
-    tasks = [get_single_stats(token, file_type) for token, file_type in file_tokens]
+    tasks = [get_single_stats(doc   ) for doc in docs]
 
     # 并发执行
     completed_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -292,7 +291,7 @@ node = Node(
 )
 
 
-async def get_wiki_info(tokens: List[str], user_token: str):
+async def get_wiki_info(tokens: List[str], user_token: str) -> List[Dict]:
     roots = [await get_wiki_node(token, user_token) for token in tokens]
     async_gen = walk_tree_concurrent(roots, user_token)
     res = []
@@ -305,16 +304,14 @@ async def get_wiki_info(tokens: List[str], user_token: str):
         res += infos
     return res
 
-
-async def get_doc_info(docs: List[RequestDoc], user_token: str):
-    files = [(doc.doc_token, doc.doc_type) for doc in docs]
-    stats_task = batch_get_stats_async(files, user_token)
+async def get_doc_info(docs: List[RequestDoc], user_token: str) -> List[Dict]:
+    stats_task = batch_get_stats_async(docs, user_token)
     meta_task = batch_get_meta_async(docs, user_token)
     stats_dict, metas = await asyncio.gather(stats_task, meta_task)
     meta_dict = {meta.doc_token: meta for meta in metas}
     res = []
     for doc in docs:
-        stat = stats_dict.get((doc.doc_token, doc.doc_type))
+        stat = stats_dict.get(doc)
         meta = meta_dict.get(doc.doc_token)
         if not stat or not meta:
             logger.error(f"Doc failed {vars(doc)}")
@@ -415,9 +412,9 @@ def parse_doc_url(url: str) -> RequestDoc:
         return None, None
 
 
-async def get_document_statistics_async_v2(
+async def get_document_statistics_async(
     urls: List[str], user_token: str
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> List[Dict]:
     docs = [parse_doc_url(url) for url in urls]
     infos = []
     wikis = list(filter(lambda doc: doc.doc_type == "wiki", docs))
@@ -477,7 +474,7 @@ async def batch_get_meta_async(docs: List[RequestDoc], user_token: str) -> List[
                     except:
                         error_msg += f", raw content: {response.raw.content}"
 
-                lark.logger.error(error_msg)
+                logger.error(error_msg)
                 logger.error(f"批量获取元数据失败: {response.code} - {response.msg}")
                 return []
 
@@ -503,7 +500,7 @@ async def main():
         "https://bytedance.larkoffice.com/wiki/Is5WwlqG1iIkA5kVfwdcVhSMnBe",
         "https://bytedance.larkoffice.com/wiki/MImZwhOfuisCC8kip9icDdcanVb",
     ]
-    stats = await get_document_statistics_async_v2(urls, user_token)
+    stats = await get_document_statistics_async(urls, user_token)
     pass
 
 
