@@ -279,7 +279,7 @@ async def get_doc_info(docs: List[RequestDoc], user_token: str):
     meta_dict = {meta.doc_token: meta for meta in metas}
     res = []
     for doc in docs:
-        stat = stats_dict.get(doc.doc_token, doc.doc_type)
+        stat = stats_dict.get((doc.doc_token, doc.doc_type))
         meta = meta_dict.get(doc.doc_token)
         if not stat or not meta:
             print(f"Doc failed {vars(doc)}")
