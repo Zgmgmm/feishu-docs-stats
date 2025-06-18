@@ -27,10 +27,10 @@ def auth_callback():
         return jsonify({"error": "Invalid state parameter"}), 400
     if not code:
         return jsonify({"error": "Missing authorization code"}), 400
-    user_access_token = exchange_code_for_token(code)
+    user_access_token, expires_in = exchange_code_for_token(code)
     if not user_access_token:
         return jsonify({"error": "Failed to get access token"}), 500
-    jwt_token = create_jwt_token(user_access_token)
+    jwt_token = create_jwt_token(user_access_token, expires_in)
     session.pop('auth_state', None)
     return redirect(url_for('index', token=jwt_token))
 
@@ -44,7 +44,6 @@ def auth_status():
             return jsonify({
                 "authorized": True,
                 "has_token": True,
-                "expires_in": auth_config.jwt_expire_minutes * 60
             })
     jwt_token = request.args.get('token')
     if jwt_token:
@@ -54,7 +53,6 @@ def auth_status():
                 "authorized": True,
                 "has_token": True,
                 "token": jwt_token,
-                "expires_in": auth_config.jwt_expire_minutes * 60
             })
     return jsonify({
         "authorized": False,

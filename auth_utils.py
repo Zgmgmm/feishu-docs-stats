@@ -30,7 +30,6 @@ class AuthConfig:
     user_access_token: str = os.environ.get("FEISHU_USER_ACCESS_TOKEN", "")
     # JWT配置
     jwt_secret: str = os.environ.get("JWT_SECRET", secrets.token_hex(32))
-    jwt_expire_minutes: int = 30  # JWT过期时间（分钟）
     # ngrok配置
     use_ngrok: bool = os.environ.get("USE_NGROK", "false").lower() == "true"
 
@@ -48,7 +47,7 @@ def get_feishu_client() -> lark.Client:
     return client
 
 # --- JWT相关函数 ---
-def create_jwt_token(user_access_token: str) -> str:
+def create_jwt_token(user_access_token: str, expires_in: int) -> str:
     """创建JWT token
     
     Args:
@@ -57,16 +56,17 @@ def create_jwt_token(user_access_token: str) -> str:
     Returns:
         JWT token字符串
     """
+    expires_in_minutes = expires_in//60
     now = datetime.now(timezone.utc)
     payload = {
         'user_access_token': user_access_token,
-        'exp': now + timedelta(minutes=auth_config.jwt_expire_minutes),
+        'exp': now + timedelta(minutes=expires_in_minutes),
         'iat': now,
         'iss': 'doc-stats-app'
     }
     
     token = jwt.encode(payload, auth_config.jwt_secret, algorithm='HS256')
-    logger.info(f"创建JWT token，过期时间: {auth_config.jwt_expire_minutes}分钟")
+    logger.info(f"创建JWT token，过期时间: {expires_in_minutes}分钟")
     return token
 
 def verify_jwt_token(token: str) -> Optional[str]:
@@ -85,7 +85,7 @@ def verify_jwt_token(token: str) -> Optional[str]:
         if not user_access_token:
             logger.error("JWT token中缺少user_access_token")
             return None
-            
+    
         logger.info("JWT token验证成功")
         return user_access_token
         
@@ -155,7 +155,7 @@ def get_authorization_url() -> str:
     logger.info(f"生成授权URL: {auth_url}")
     return auth_url
 
-def exchange_code_for_token(authorization_code: str) -> Optional[str]:
+def exchange_code_for_token(authorization_code: str) -> tuple[str,int]:
     """使用授权码换取user_access_token
     
     Args:
@@ -183,20 +183,21 @@ def exchange_code_for_token(authorization_code: str) -> Optional[str]:
         if response.code == 0:
             data = response.data
             user_access_token = data.access_token
+            expires_in = data.expires_in
             
             if user_access_token:
                 logger.info("成功获取user_access_token")
-                return user_access_token
+                return user_access_token, expires_in
             else:
                 logger.error("响应中缺少access_token")
-                return None
+                return "", 0
         else:
             logger.error(f"获取user_access_token失败: {response.msg}")
-            return None
+            return "", 0
             
     except Exception as e:
         logger.error(f"换取user_access_token时发生异常: {e}")
-        return None
+        return "", 0
 
 def get_user_access_token() -> Optional[str]:
     """获取当前用户的access_token
