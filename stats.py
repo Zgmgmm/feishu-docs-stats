@@ -278,9 +278,12 @@ async def get_doc_info(docs: List[RequestDoc], user_token: str):
     stats_dict, metas = await asyncio.gather(stats_task, meta_task)
     meta_dict = {meta.doc_token: meta for meta in metas}
     res = []
-    for doc in docs: 
-        stat = stats_dict[(doc.doc_token, doc.doc_type)]
-        meta = meta_dict[doc.doc_token]
+    for doc in docs:
+        stat = stats_dict.get(doc.doc_token, doc.doc_type)
+        meta = meta_dict.get(doc.doc_token)
+        if not stat or not meta:
+            print(f"Doc failed {vars(doc)}")
+            continue
         res.append({
             "title": meta.title,
             "type": meta.doc_type,
