@@ -366,12 +366,16 @@ def parse_doc_url(url: str) -> RequestDoc:
 
 async def get_document_statistics_async_v2(urls: List[str], user_token: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:        
     docs = [parse_doc_url(url) for url in urls]
-    wikis = filter(lambda doc:doc.doc_type == "wiki", docs)
-    wiki_tokens = list(map(lambda doc:doc.doc_token, wikis))
-    wiki_infos = await get_wiki_info(wiki_tokens, user_token)
+    infos = []
+    wikis = list(filter(lambda doc:doc.doc_type == "wiki", docs))
+    if len(wikis) > 0:
+        wiki_tokens = list(map(lambda doc:doc.doc_token, wikis))
+        wiki_infos = await get_wiki_info(wiki_tokens, user_token)
+        infos += wiki_infos
     non_wikis = list(filter(lambda doc:doc.doc_type != "wiki", docs))
-    doc_infos = await get_doc_info(non_wikis, user_token)
-    infos = wiki_infos + doc_infos
+    if len(non_wikis) > 0:
+        doc_infos = await get_doc_info(non_wikis, user_token)
+        infos += doc_infos
     print(infos)
     return infos, None
 
