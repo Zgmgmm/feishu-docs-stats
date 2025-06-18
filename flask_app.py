@@ -359,7 +359,7 @@ def get_doc_meta():
             .build()
         
         # 获取元数据
-        metas = batch_get_meta([request_doc])
+        metas = batch_get_meta([request_doc], user_token)
         if metas and len(metas) > 0:
             meta = metas[0]
             return jsonify({
