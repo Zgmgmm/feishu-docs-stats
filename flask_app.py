@@ -1,17 +1,10 @@
-import logging
+import asyncio
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
-import asyncio
-from stats import get_document_statistics_async_v2
-from auth_utils import *
-from doc_stats_utils import *
-from stats import parse_doc_url
+from auth_utils import get_user_access_token, get_authorization_url, verify_jwt_token, create_jwt_token, exchange_code_for_token, get_current_user_info
+from init import config, logger
+from stats import batch_get_meta_async, get_document_statistics_async_v2, parse_doc_url
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger("doc-stats")
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key_here"  # 请替换为安全的密钥
@@ -265,7 +258,7 @@ def get_doc_meta():
     # 创建新的事件循环
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
+
     try:
         # 解析URL
         doc = parse_doc_url(url)
@@ -273,9 +266,7 @@ def get_doc_meta():
             return jsonify({"error": f"无法解析URL: {url}"}), 400
 
         # 获取元数据
-        metas = loop.run_until_complete(
-            batch_get_meta_async([doc], user_token)
-        )
+        metas = loop.run_until_complete(batch_get_meta_async([doc], user_token))
         if metas and len(metas) > 0:
             meta = metas[0]
             return jsonify(
@@ -303,7 +294,7 @@ if __name__ == "__main__":
     logger.info("启动Flask服务器...")
 
     # 如果配置了使用 ngrok，自动启动隧道
-    if auth_config.use_ngrok:
+    if config.use_ngrok:
         try:
             from ngrok_utils import start_ngrok_tunnel
 

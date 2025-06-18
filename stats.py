@@ -1,20 +1,22 @@
 import asyncio
+import json
 import logging
-from typing import *
+from typing import List, Tuple, Dict, Any, Optional, Iterator
 from urllib.parse import urlparse
 
 import lark_oapi as lark
-from lark_oapi.api.drive.v1.model import RequestDoc
-from lark_oapi.api.wiki.v2 import *
+from lark_oapi.api.drive.v1 import GetFileStatisticsRequest, GetFileStatisticsResponse
+from lark_oapi.api.drive.v1.model import Meta, MetaRequest, RequestDoc
+from lark_oapi.api.drive.v1.resource.meta import (
+    BatchQueryMetaRequest,
+    BatchQueryMetaResponse,
+)
+from lark_oapi.api.wiki.v2 import GetNodeSpaceRequest, GetNodeSpaceResponse, ListSpaceNodeRequest, ListSpaceNodeResponse, Node
 
-from doc_stats_utils import (
-    batch_get_meta_async,
-    batch_get_stats_async,
+from init import (
     client,
     logger,
 )
-
-logger = logging.getLogger("doc-stats")
 
 
 fake_tree = {
@@ -55,20 +57,114 @@ fake_tree = {
 
 from asyncio_throttle import Throttler  # 导入现成限流器
 
+
 def throttle(rate_limit: int, period: int):
     """限流装饰器：限制异步函数的调用频率"""
+
     def decorator(func):
         throttler_instance = Throttler(rate_limit, period)
+
         async def wrapper(*args, **kwargs):
             async with throttler_instance:
                 return await func(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
+
+async def batch_get_stats_async(
+    file_tokens: List[Tuple[str, str]], user_token: str
+) -> Dict[Tuple[str, str], Any]:
+    """异步批量获取文档统计信息
+
+    Args:
+        file_tokens: 包含(file_token, file_type)元组的列表
+        user_token: 用户token
+
+    Returns:
+        以(file_token, file_type)为key的统计信息字典
+    """
+    semaphore = asyncio.Semaphore(100)
+    results = {}
+
+    async def get_single_stats(file_token: str, file_type: str):
+        async with semaphore:
+            try:
+                # 使用同步API，但在异步环境中调用
+                loop = asyncio.get_event_loop()
+                stats = await loop.run_in_executor(
+                    None, get_file_stats, file_token, file_type, user_token
+                )
+                return (file_token, file_type), stats
+            except Exception as e:
+                logger.error(
+                    f"获取统计信息失败 (file_token: {file_token}, type: {file_type}): {e}"
+                )
+                return (file_token, file_type), None
+
+    # 创建所有任务
+    tasks = [get_single_stats(token, file_type) for token, file_type in file_tokens]
+
+    # 并发执行
+    completed_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # 处理结果
+    for result in completed_results:
+        if isinstance(result, Exception):
+            logger.error(f"任务执行异常: {result}")
+            continue
+        key, stats = result
+        results[key] = stats
+
+    return results
+
+
+def get_file_stats(
+    file_token: str, file_type: str, user_token: str = None
+) -> Optional[Any]:
+    """获取文档统计信息
+
+    Args:
+        file_token: 文件token
+        file_type: 文件类型，如'wiki'、'docx'等
+        user_token: 用户token
+
+    Returns:
+        统计信息对象，如果获取失败则返回None
+    """
+    request = (
+        GetFileStatisticsRequest.builder()
+        .file_token(file_token)
+        .file_type(file_type)
+        .build()
+    )
+    options = lark.RequestOption.builder().user_access_token(user_token).build()
+
+    try:
+        response: GetFileStatisticsResponse = client.drive.v1.file_statistics.get(
+            request, options
+        )
+        if not response.success():
+            logger.error(
+                f"获取文档统计信息失败 (file_token: {file_token}, type: {file_type}): {response.code} {response.msg}"
+            )
+            return None
+
+        stats = response.data.statistics
+        logger.debug(
+            f"统计信息 (token: {file_token}, type: {file_type}): stats: {vars(stats)}"
+        )
+        return stats
+    except Exception as e:
+        logger.exception(
+            f"获取文档统计信息异常 (file_token: {file_token}, type: {file_type}): {e}"
+        )
+        return None
+
+
 # ✅ 支持流式输出的并发 BFS（适用于树结构）
-async def walk_tree_concurrent(
-    roots: list[Node], user_token: str
-) -> Node:
+async def walk_tree_concurrent(roots: list[Node], user_token: str) -> Node:
     q_nodes = asyncio.Queue[Node]()
     q_parents = asyncio.Queue[Node]()
 
@@ -137,7 +233,7 @@ async def get_wiki_node(token: str, user_token: str) -> Optional[Node]:
     )
 
     try:
-        node_info_resp = await client.wiki.v2.space.aget_node(
+        node_info_resp: GetNodeSpaceResponse = await client.wiki.v2.space.aget_node(
             node_info_request, node_info_options
         )
         if (
@@ -145,7 +241,7 @@ async def get_wiki_node(token: str, user_token: str) -> Optional[Node]:
             or not node_info_resp.data
             or not node_info_resp.data.node
         ):
-            logger.error(f"无法获取根节点信息: {root_node_ttokenoken}")
+            logger.error(f"无法获取根节点信息: {token}")
             return None
 
         return node_info_resp.data.node
@@ -221,7 +317,7 @@ async def get_doc_info(docs: List[RequestDoc], user_token: str):
         stat = stats_dict.get((doc.doc_token, doc.doc_type))
         meta = meta_dict.get(doc.doc_token)
         if not stat or not meta:
-            print(f"Doc failed {vars(doc)}")
+            logger.error(f"Doc failed {vars(doc)}")
             continue
         res.append(
             {
@@ -240,10 +336,11 @@ async def get_doc_info(docs: List[RequestDoc], user_token: str):
                 "update_time": meta.latest_modify_time,
             }
         )
-        print(f"Doc {vars(meta)}：{vars(stat)}")
+        logger.debug(f"Doc {vars(meta)}：{vars(stat)}")
     return res
 
-@throttle(1000, 60)
+
+@throttle(100, 60)
 async def get_children(parent: Node, user_token: str) -> List[Node]:
     all_nodes = []
     page_token = None
@@ -276,7 +373,7 @@ async def get_children(parent: Node, user_token: str) -> List[Node]:
             if response.data and response.data.items:
                 for item in response.data.items:
                     all_nodes.append(item)
-                    logger.info(
+                    logger.debug(
                         f"{item.title} (token: {item.node_token}, type: {item.obj_type})"
                     )
             # 处理分页
@@ -332,8 +429,70 @@ async def get_document_statistics_async_v2(
     if len(non_wikis) > 0:
         doc_infos = await get_doc_info(non_wikis, user_token)
         infos += doc_infos
-    print(infos)
     return infos, None
+
+
+async def batch_get_meta_async(docs: List[RequestDoc], user_token: str) -> List[Meta]:
+    """异步批量获取文档元数据，支持分批处理以避免超过API限制
+
+    Args:
+        docs: RequestDoc对象列表
+        user_token: 用户token
+
+    Returns:
+        元数据列表
+    """
+    if not docs:
+        return []
+
+    # 飞书API限制：request_docs最大长度为200
+    BATCH_SIZE = 200
+    all_metas = []
+
+    # 分批处理
+    for i in range(0, len(docs), BATCH_SIZE):
+        batch_docs = docs[i : i + BATCH_SIZE]
+        # 构造请求对象
+        request: BatchQueryMetaRequest = (
+            BatchQueryMetaRequest.builder()
+            .user_id_type("open_id")
+            .request_body(
+                MetaRequest.builder().request_docs(batch_docs).with_url(False).build()
+            )
+            .build()
+        )
+        try:
+            options = lark.RequestOption.builder().user_access_token(user_token).build()
+            response: BatchQueryMetaResponse = await client.drive.v1.meta.abatch_query(
+                request, options
+            )
+
+            # 处理失败返回
+            if not response.success():
+                error_msg = f"client.drive.v1.meta.batch_query failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}"
+                if response.raw and response.raw.content:
+                    try:
+                        error_detail = json.loads(response.raw.content)
+                        error_msg += f", resp: \n{json.dumps(error_detail, indent=4, ensure_ascii=False)}"
+                    except:
+                        error_msg += f", raw content: {response.raw.content}"
+
+                lark.logger.error(error_msg)
+                logger.error(f"批量获取元数据失败: {response.code} - {response.msg}")
+                return []
+
+            # 返回元数据
+            if response.data and response.data.metas:
+                logger.debug(f"成功获取 {len(response.data.metas)} 个元数据")
+                all_metas.extend(response.data.metas)
+            else:
+                logger.warning("API返回成功但未获取到元数据")
+                return []
+
+        except Exception as e:
+            logger.exception(f"批量获取元数据时发生异常: {e}")
+            return []
+    return all_metas
 
 
 async def main():
