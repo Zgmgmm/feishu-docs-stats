@@ -13,7 +13,7 @@ from typing import List, Dict, Optional, Tuple, Any, Union
 from urllib.parse import urlparse, unquote
 from dotenv import load_dotenv
 import lark_oapi as lark
-from lark_oapi.api.wiki.v2 import GetNodeSpaceRequest, GetNodeSpaceResponse, ListSpaceNodeRequest, ListSpaceNodeResponse
+from lark_oapi.api.wiki.v2 import GetNodeSpaceRequest, GetNodeSpaceResponse, ListSpaceNodeRequest, ListSpaceNodeResponse, Node
 from lark_oapi.api.drive.v1 import GetFileStatisticsRequest, GetFileStatisticsResponse
 from lark_oapi.api.drive.v1.resource.meta import BatchQueryMetaRequest, BatchQueryMetaResponse
 from lark_oapi.api.drive.v1.model import MetaRequest, RequestDoc, Meta
@@ -476,13 +476,6 @@ def batch_get_meta_single(docs: List[RequestDoc], user_token: str = None) -> Lis
             .build()) \
         .build()
 
-    # 发起请求
-    if not user_token:
-        user_token = get_user_access_token()
-    if not user_token:
-        logger.error("未找到有效的user_access_token")
-        return []
-        
     try:
         options = lark.RequestOption.builder().user_access_token(user_token).build()
         response: BatchQueryMetaResponse = client.drive.v1.meta.batch_query(request, options)
@@ -523,7 +516,7 @@ async def batch_get_stats_async(file_tokens: List[Tuple[str, str]], user_token: 
     Returns:
         以(file_token, file_type)为key的统计信息字典
     """
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+    semaphore = asyncio.Semaphore(100)
     results = {}
     
     async def get_single_stats(file_token: str, file_type: str):
@@ -573,18 +566,45 @@ async def batch_get_meta_async(docs: List[RequestDoc], user_token: str) -> List[
     # 分批处理
     for i in range(0, len(docs), BATCH_SIZE):
         batch_docs = docs[i:i + BATCH_SIZE]
-        
+        # 构造请求对象
+        request: BatchQueryMetaRequest = BatchQueryMetaRequest.builder() \
+            .user_id_type("open_id") \
+            .request_body(MetaRequest.builder()
+                .request_docs(batch_docs)
+                .with_url(False)
+                .build()) \
+            .build()
         try:
-            # 将同步调用包装在异步环境中
-            loop = asyncio.get_event_loop()
-            batch_metas = await loop.run_in_executor(None, batch_get_meta_single, batch_docs, user_token)
-            all_metas.extend(batch_metas)
+            options = lark.RequestOption.builder().user_access_token(user_token).build()
+            response: BatchQueryMetaResponse = await client.drive.v1.meta.abatch_query(request, options)
+            
+            # 处理失败返回
+            if not response.success():
+                error_msg = f"client.drive.v1.meta.batch_query failed, code: {response.code}, msg: {response.msg}, log_id: {response.get_log_id()}"
+                if response.raw and response.raw.content:
+                    try:
+                        error_detail = json.loads(response.raw.content)
+                        error_msg += f", resp: \n{json.dumps(error_detail, indent=4, ensure_ascii=False)}"
+                    except:
+                        error_msg += f", raw content: {response.raw.content}"
+                
+                lark.logger.error(error_msg)
+                logger.error(f"批量获取元数据失败: {response.code} - {response.msg}")
+                return []
+                
+            # 返回元数据
+            if response.data and response.data.metas:
+                logger.debug(f"成功获取 {len(response.data.metas)} 个元数据")
+                all_metas.extend(response.data.metas)
+            else:
+                logger.warning("API返回成功但未获取到元数据")
+                return []
+                
         except Exception as e:
-            logger.error(f"批量获取元数据失败 (批次 {i//BATCH_SIZE + 1}): {e}")
-            continue
-    
+            logger.exception(f"批量获取元数据时发生异常: {e}")
+            return []
     return all_metas
-
+    
 def batch_get_stats(file_tokens: List[Tuple[str, str]], user_token: str = None) -> Dict[Tuple[str, str], Any]:
     """同步批量获取文档统计信息
     
@@ -628,12 +648,6 @@ def get_file_stats(file_token: str, file_type: str, user_token: str = None) -> O
         .file_token(file_token) \
         .file_type(file_type) \
         .build()
-    if not user_token:
-        user_token = get_user_access_token()
-    if not user_token:
-        logger.error("未找到有效的user_access_token")
-        return None
-    
     options = lark.RequestOption.builder().user_access_token(user_token).build()
 
     try:

@@ -87,7 +87,7 @@ def start_ngrok():
     """启动 ngrok 隧道"""
     try:
         from ngrok_utils import start_ngrok_tunnel
-        port = request.args.get('port', 5000, type=int)
+        port = request.args.get('port', 5001, type=int)
         public_url = start_ngrok_tunnel(port)
         
         if public_url:
@@ -215,6 +215,7 @@ def handle_stats_request():
     try:
         import asyncio
         from doc_stats_utils import get_document_statistics_async
+        from stats import get_document_statistics_async_v2
         
         # 创建新的事件循环
         loop = asyncio.new_event_loop()
@@ -224,6 +225,7 @@ def handle_stats_request():
             start_time = asyncio.get_event_loop().time()
             doc_stats, processed_wikis = loop.run_until_complete(
                 get_document_statistics_async(input_urls, user_token)
+                # get_document_statistics_async_v2(input_urls, user_token)
             )
             end_time = asyncio.get_event_loop().time()
             
@@ -389,7 +391,7 @@ if __name__ == "__main__":
     if auth_config.use_ngrok:
         try:
             from ngrok_utils import start_ngrok_tunnel
-            public_url = start_ngrok_tunnel(5000)
+            public_url = start_ngrok_tunnel(5001)
             if public_url:
                 logger.info(f"ngrok 隧道已启动: {public_url}")
                 logger.info(f"重定向 URI: {public_url}/auth/callback")
@@ -400,4 +402,4 @@ if __name__ == "__main__":
         except Exception as e:
             logger.error(f"启动 ngrok 隧道时发生错误: {e}")
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5001)
