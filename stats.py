@@ -10,7 +10,13 @@ from lark_oapi.api.drive.v1.resource.meta import (
     BatchQueryMetaRequest,
     BatchQueryMetaResponse,
 )
-from lark_oapi.api.wiki.v2 import GetNodeSpaceRequest, GetNodeSpaceResponse, ListSpaceNodeRequest, ListSpaceNodeResponse, Node
+from lark_oapi.api.wiki.v2 import (
+    GetNodeSpaceRequest,
+    GetNodeSpaceResponse,
+    ListSpaceNodeRequest,
+    ListSpaceNodeResponse,
+    Node,
+)
 
 from init import (
     client,
@@ -97,13 +103,11 @@ async def batch_get_stats_async(
                 )
                 return doc, stats
             except Exception as e:
-                logger.error(
-                    f"获取统计信息失败 ({doc}): {e}"
-                )
+                logger.error(f"获取统计信息失败 ({doc}): {e}")
                 return doc, None
 
     # 创建所有任务
-    tasks = [get_single_stats(doc   ) for doc in docs]
+    tasks = [get_single_stats(doc) for doc in docs]
 
     # 并发执行
     completed_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -249,48 +253,6 @@ async def get_wiki_node(token: str, user_token: str) -> Optional[Node]:
         return None
 
 
-home = Node(
-    {
-        "creator": "ou_12281da53242d092b4f94fd05a8db87d",
-        "has_child": True,
-        "node_create_time": "1720163737",
-        "node_creator": "ou_12281da53242d092b4f94fd05a8db87d",
-        "node_token": "GQ0Owf7EmirsookHOh4cpx4XnMf",
-        "node_type": "origin",
-        "obj_create_time": "1720163737",
-        "obj_edit_time": "1749977983",
-        "obj_token": "QVIndcvtbocvZjxaOuJcgid5nFe",
-        "obj_type": "docx",
-        "origin_node_token": "GQ0Owf7EmirsookHOh4cpx4XnMf",
-        "origin_space_id": "7064927739869954076",
-        "owner": "ou_12281da53242d092b4f94fd05a8db87d",
-        "parent_node_token": "wikcn6YQbanr7yHT1pucnHeewcc",
-        "space_id": "7064927739869954076",
-        "title": "首页框架",
-    }
-)
-node = Node(
-    {
-        "creator": "ou_12281da53242d092b4f94fd05a8db87d",
-        "has_child": True,
-        "node_create_time": "1735452354",
-        "node_creator": "ou_12281da53242d092b4f94fd05a8db87d",
-        "node_token": "R7oQwIXvUixG3FkimMBcTx2Inxh",
-        "node_type": "origin",
-        "obj_create_time": "1735452354",
-        "obj_edit_time": "1736610706",
-        "obj_token": "Jv1ndYk7DoUP4jxnI3ZcGfjqnSc",
-        "obj_type": "docx",
-        "origin_node_token": "R7oQwIXvUixG3FkimMBcTx2Inxh",
-        "origin_space_id": "7064927739869954076",
-        "owner": "ou_12281da53242d092b4f94fd05a8db87d",
-        "parent_node_token": "GQ0Owf7EmirsookHOh4cpx4XnMf",
-        "space_id": "7064927739869954076",
-        "title": "总结&规划",
-    }
-)
-
-
 async def get_wiki_info(tokens: List[str], user_token: str) -> List[Dict]:
     roots = [await get_wiki_node(token, user_token) for token in tokens]
     async_gen = walk_tree_concurrent(roots, user_token)
@@ -303,6 +265,7 @@ async def get_wiki_info(tokens: List[str], user_token: str) -> List[Dict]:
         infos = await get_doc_info(docs, user_token)
         res += infos
     return res
+
 
 async def get_doc_info(docs: List[RequestDoc], user_token: str) -> List[Dict]:
     stats_task = batch_get_stats_async(docs, user_token)
@@ -321,7 +284,6 @@ async def get_doc_info(docs: List[RequestDoc], user_token: str) -> List[Dict]:
                 "title": meta.title,
                 "type": meta.doc_type,
                 "token": meta.doc_token,
-                "node_token": doc.doc_token,
                 "source_url": f"https://bytedance.larkoffice.com/{meta.doc_type}/{meta.doc_token}",
                 "uv": stat.uv,
                 "pv": stat.pv,
@@ -412,9 +374,7 @@ def parse_doc_url(url: str) -> RequestDoc:
         return None, None
 
 
-async def get_document_statistics_async(
-    urls: List[str], user_token: str
-) -> List[Dict]:
+async def get_document_statistics_async(urls: List[str], user_token: str) -> List[Dict]:
     docs = [parse_doc_url(url) for url in urls]
     infos = []
     wikis = list(filter(lambda doc: doc.doc_type == "wiki", docs))

@@ -196,10 +196,6 @@ def get_user_access_token() -> Optional[str]:
         if user_access_token:
             return user_access_token
 
-    # 如果没有JWT token，使用配置中的默认token
-    if config.user_access_token:
-        return config.user_access_token
-
     return None
 
 
