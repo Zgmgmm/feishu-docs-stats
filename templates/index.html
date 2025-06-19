@@ -1010,15 +1010,15 @@
             
             <div class="stats-grid" id="statsGrid"></div>
             
-            <h3>📋 详细数据</h3>
             <div class="table-container">
                 <table class="data-table" id="dataTable">
                     <thead>
                         <tr>
-                            <th rowspan="2">DOCUMENT</th>
+                            <th rowspan="2" style="width: 400px;">DOCUMENT</th>
                             <th colspan="3" class="header-group">TOTAL</th>
                             <th colspan="3" class="header-group">TODAY</th>
                             <th rowspan="2" class="sortable" data-sort="update_time">UPDATE TIME</th>
+                            <th rowspan="2" class="sortable" data-sort="create_time">CREATE TIME</th>
                         </tr>
                         <tr>
                             <th class="sortable" data-sort="uv">UV</th>
@@ -1478,10 +1478,17 @@
                         const date = new Date(newDoc.update_time);
                         newDoc._sortTime = isNaN(date.getTime()) ? 0 : date.getTime();
                     }
-                } else if (newDoc.timestamp) {
-                    newDoc._sortTime = newDoc.timestamp < 10000000000 ? newDoc.timestamp * 1000 : newDoc.timestamp;
+                }
+                // 处理create_time
+                if (newDoc.create_time) {
+                    if (typeof newDoc.create_time === 'number' || newDoc.create_time[0] === '1') {
+                        newDoc._sortCreateTime = newDoc.create_time < 10000000000 ? newDoc.create_time * 1000 : newDoc.create_time;
+                    } else {
+                        const createDate = new Date(newDoc.create_time);
+                        newDoc._sortCreateTime = isNaN(createDate.getTime()) ? 0 : createDate.getTime();
+                    }
                 } else {
-                    newDoc._sortTime = 0;
+                    newDoc._sortCreateTime = 0;
                 }
                 return newDoc;
             });
@@ -1562,12 +1569,20 @@
                 const row = document.createElement('tr');
                 // 格式化更新时间
                 let updateTime = '';
+                let createTime = '';
                 
                 // 使用已初始化的_sortTime
                 if (doc._sortTime) {
                     updateTime = new Date(doc._sortTime).toLocaleString('zh-CN');
                 } else {
                     updateTime = '未知时间';
+                }
+                
+                // 处理创建时间
+                if (doc._sortCreateTime) {
+                    createTime = new Date(doc._sortCreateTime).toLocaleString('zh-CN');
+                } else {
+                    createTime = '未知时间';
                 }
                 
                 // 获取TYPE对应的CSS类名
@@ -1598,6 +1613,7 @@
                     <td>${doc.pv_today || 0}</td>
                     <td>${doc.like_count_today || 0}</td>
                     <td>${updateTime}</td>
+                    <td>${createTime}</td>
                 `;
                 tableBody.appendChild(row);
             });
@@ -1718,6 +1734,10 @@
                     // 使用预处理的排序时间值
                     aValue = a._sortTime || 0;
                     bValue = b._sortTime || 0;
+                } else if (field === 'create_time') {
+                    // 使用预处理的创建时间排序值
+                    aValue = a._sortCreateTime || 0;
+                    bValue = b._sortCreateTime || 0;
                 } else {
                     // 处理数字排序（包括新增的历史数据字段）
                     aValue = parseInt(a[field]) || 0;
@@ -1850,4 +1870,4 @@
         }
     </script>
 </body>
-</html> 
+</html>

@@ -325,7 +325,7 @@ async def get_doc_info(docs: List[RequestDoc], user_token: str) -> List[Dict]:
                 "uv": stat.uv,
                 "pv": stat.pv,
                 "like_count": max(stat.like_count, 0),
-                "timestamp": meta.latest_modify_time,
+                "create_time": meta.create_time,
                 "uv_today": stat.uv_today,
                 "pv_today": stat.pv_today,
                 "like_count_today": stat.like_count_today,
