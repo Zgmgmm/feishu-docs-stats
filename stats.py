@@ -438,7 +438,7 @@ async def get_document_statistics_async_ppl(
 
     res = []
     total = 0
-    async for (docs,incr) in batcher(it, batch_size=100):
+    async for (docs,incr) in batcher(it, batch_size=50):
         infos = await get_doc_info(docs, user_token)
         res += infos
         total += incr
