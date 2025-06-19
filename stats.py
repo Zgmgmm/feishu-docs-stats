@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import List, Dict, Any, Optional, Iterator
+from typing import List, Dict, Any, Optional, Iterator, Tuple
 from urllib.parse import urlparse
 
 import lark_oapi as lark
@@ -165,11 +165,26 @@ def get_file_stats(
         )
         return None
 
+class AQueueWithCounter(asyncio.Queue):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.counter = 0
+
+    async def put(self, item):
+        await super().put(item)
+        self.counter += 1
+
+    def count(self) -> int:
+        return self.counter
 
 # ✅ 支持流式输出的并发 BFS（适用于树结构）
-async def walk_tree_concurrent(roots: list[Node], user_token: str) -> Node:
-    q_nodes = asyncio.Queue[Node]()
+async def walk_tree_concurrent(
+    roots: list[Node], user_token: str
+) -> Iterator[Tuple[Node, int]]:
+    q_nodes = AQueueWithCounter[Node]()
     q_parents = asyncio.Queue[Node]()
+
+    total = 0
 
     async def worker():
         node = await q_parents.get()
@@ -199,27 +214,33 @@ async def walk_tree_concurrent(roots: list[Node], user_token: str) -> Node:
     asyncio.create_task(wait_for_completion())
 
     # 👇 用 async generator 持续 yield 流式数据
+    last_total = 0
     while True:
         item = await q_nodes.get()
         if item is None:
             break
-        yield item
+        total = q_nodes.count()
+        yield (item, total - last_total)
+        last_total = total
 
 
 # 这是批量收集器，异步迭代器输入，批量输出 list
-async def batcher(iter: Iterator[Node], batch_size: int) -> List[Node]:
+async def batcher(iter: Iterator[Tuple[Node,int]], batch_size: int) -> List[Tuple[Node,int]]:
     batch: List[Node] = []
-    async for item in iter:
-        batch.append(item)
+    batch_incr = 0
+    async for (node, incr) in iter:
+        batch.append(node)
+        batch_incr += incr
         if len(batch) >= batch_size:
-            yield batch
+            yield (batch, batch_incr)
             batch = []
+            batch_incr = 0
     # 最后一批不足 batch_size，也输出
     if batch[0]:
-        yield batch
+        yield (batch, batch_incr)
 
 
-async def get_wiki_node(token: str, user_token: str) -> Optional[Node]:
+async def get_wiki_node(token: str, user_token: str) -> Node:
     """获取根节点信息
 
     Args:
@@ -253,14 +274,30 @@ async def get_wiki_node(token: str, user_token: str) -> Optional[Node]:
         return None
 
 
+async def walk_wiki_info(tokens: List[str], user_token: str) -> Iterator[RequestDoc]:
+    roots = [await get_wiki_node(token, user_token) for token in tokens]
+    async_gen = walk_tree_concurrent(roots, user_token)
+    async for node, total in async_gen:
+        doc = (
+            RequestDoc.builder()
+            .doc_token(node.obj_token)
+            .doc_type(node.obj_type)
+            .build()
+        )
+        yield (doc, total)
+
+
 async def get_wiki_info(tokens: List[str], user_token: str) -> List[Dict]:
     roots = [await get_wiki_node(token, user_token) for token in tokens]
     async_gen = walk_tree_concurrent(roots, user_token)
     res = []
-    async for batch in batcher(async_gen, batch_size=200):
+    async for nodes in batcher(async_gen, batch_size=200):
         docs = [
-            RequestDoc.builder().doc_token(doc.obj_token).doc_type(doc.obj_type).build()
-            for doc in batch
+            RequestDoc.builder()
+            .doc_token(node.obj_token)
+            .doc_type(node.obj_type)
+            .build()
+            for node in nodes
         ]
         infos = await get_doc_info(docs, user_token)
         res += infos
@@ -374,6 +411,43 @@ def parse_doc_url(url: str) -> RequestDoc:
         return None, None
 
 
+async def achain(*its):
+    for it in its:
+        async for item in it:
+            yield item
+
+
+async def get_document_statistics_async_ppl(
+    urls: List[str], user_token: str
+) -> List[Dict]:
+    docs = [parse_doc_url(url) for url in urls]
+    infos = []
+    wikis = list(filter(lambda doc: doc.doc_type == "wiki", docs))
+    non_wikis = list(filter(lambda doc: doc.doc_type != "wiki", docs))
+    it = iter(non_wikis)
+
+    async def non_wiki_it():
+        for doc in non_wikis:
+            yield (doc, 1)
+
+    it = non_wiki_it()
+    if len(wikis) > 0:
+        wiki_tokens = list(map(lambda doc: doc.doc_token, wikis))
+        wiki_docs = walk_wiki_info(wiki_tokens, user_token)
+        it = achain(it, wiki_docs)
+
+    res = []
+    total = 0
+    async for (docs,incr) in batcher(it, batch_size=100):
+        infos = await get_doc_info(docs, user_token)
+        res += infos
+        total += incr
+        processed = len(res)
+        logger.warning(f"get doc {processed}/{total} {round(100*processed/total,2)}%")
+    return res
+    return infos, None
+
+
 async def get_document_statistics_async(urls: List[str], user_token: str) -> List[Dict]:
     docs = [parse_doc_url(url) for url in urls]
     infos = []
@@ -453,14 +527,16 @@ async def batch_get_meta_async(docs: List[RequestDoc], user_token: str) -> List[
 
 
 async def main():
-    user_token = "u-g4K9iOW4l54qLbdLf.fKrv40nWNx14aNVG204kUwwIBb"
+    user_token = "u-iTBMuIqYx6jq5irJaJ1k.a5g5Kw5140NWwG044o02fDc"
     # wiki_tokens = ["GQ0Owf7EmirsookHOh4cpx4XnMf"]
     # stats = await get_wiki_info(wiki_tokens, user_token)
     urls = [
         "https://bytedance.larkoffice.com/wiki/Is5WwlqG1iIkA5kVfwdcVhSMnBe",
         "https://bytedance.larkoffice.com/wiki/MImZwhOfuisCC8kip9icDdcanVb",
+        "https://bytedance.larkoffice.com/docx/Gyqgd4bkzoCJ0VxhshEcF4SinKb",
+        "https://bytedance.larkoffice.com/docx/KRsDdTCQIo7wXgxnsh0c52rlnmd",
     ]
-    stats = await get_document_statistics_async(urls, user_token)
+    stats = await get_document_statistics_async_ppl(urls, user_token)
     pass
 
 
