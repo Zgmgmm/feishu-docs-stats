@@ -278,12 +278,14 @@ async def walk_wiki_info(tokens: List[str], user_token: str) -> Iterator[Request
     roots = [await get_wiki_node(token, user_token) for token in tokens]
     async_gen = walk_tree_concurrent(roots, user_token)
     async for node, total in async_gen:
+        node: Node = node
         doc = (
             RequestDoc.builder()
             .doc_token(node.obj_token)
             .doc_type(node.obj_type)
             .build()
         )
+        doc.node_token = node.node_token
         yield (doc, total)
 
 
@@ -316,12 +318,15 @@ async def get_doc_info(docs: List[RequestDoc], user_token: str) -> List[Dict]:
         if not stat or not meta:
             logger.error(f"Doc failed {vars(doc)}")
             continue
+        url = f"https://bytedance.larkoffice.com/{doc.doc_type}/{doc.doc_token}"
+        if doc.node_token:
+            url = f"https://bytedance.larkoffice.com/wiki/{doc.node_token}"
         res.append(
             {
                 "title": meta.title,
                 "type": meta.doc_type,
                 "token": meta.doc_token,
-                "source_url": f"https://bytedance.larkoffice.com/{meta.doc_type}/{meta.doc_token}",
+                "source_url": url,
                 "uv": stat.uv,
                 "pv": stat.pv,
                 "like_count": max(stat.like_count, 0),
