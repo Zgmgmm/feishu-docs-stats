@@ -1,9 +1,21 @@
 import asyncio
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
-from auth_utils import get_user_access_token, get_authorization_url, verify_jwt_token, create_jwt_token, exchange_code_for_token, get_current_user_info
+from auth_utils import (
+    get_user_access_token,
+    get_authorization_url,
+    verify_jwt_token,
+    create_jwt_token,
+    exchange_code_for_token,
+    get_current_user_info,
+)
 from init import config, logger
-from stats import batch_get_meta_async, get_document_statistics_async, get_document_statistics_async_ppl, parse_doc_url
+from stats import (
+    batch_get_meta_async,
+    get_document_statistics_async,
+    get_document_statistics_async_ppl,
+    parse_doc_url,
+)
 
 
 app = Flask(__name__)
